@@ -8,7 +8,7 @@
 #include "vt.h"
 #include "objects/object_mm/object_mm.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_WHILE_CULLED)
+#define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
 typedef enum {
     /* 0 */ RM2_ANIM_RUN,
@@ -106,14 +106,14 @@ void func_80AAEF70(EnMm2* this, PlayState* play) {
     } else if (Flags_GetInfTable(INFTABLE_17F)) {
         if (gSaveContext.eventInf[1] & 1) {
             this->actor.textId = 0x6082;
-        } else if (gSaveContext.timer2State != 0) {
+        } else if (gSaveContext.subTimerState != SUBTIMER_STATE_OFF) {
             this->actor.textId = 0x6076;
         } else if (HIGH_SCORE(HS_MARATHON) == 158) {
             this->actor.textId = 0x607E;
         } else {
             this->actor.textId = 0x6081;
         }
-    } else if (gSaveContext.timer2State) {
+    } else if (gSaveContext.subTimerState != SUBTIMER_STATE_OFF) {
         this->actor.textId = 0x6076;
     } else {
         this->actor.textId = 0x607D;
@@ -161,8 +161,6 @@ void EnMm2_Destroy(Actor* thisx, PlayState* play) {
     EnMm2* this = (EnMm2*)thisx;
 
     Collider_DestroyCylinder(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 s32 func_80AAF224(EnMm2* this, PlayState* play, EnMm2ActionFunc actionFunc) {
@@ -174,7 +172,7 @@ s32 func_80AAF224(EnMm2* this, PlayState* play, EnMm2ActionFunc actionFunc) {
     }
     yawDiff = this->actor.yawTowardsPlayer - this->actor.shape.rot.y;
     if ((ABS(yawDiff) <= 0x4300) && (this->actor.xzDistToPlayer < 100.0f)) {
-        func_8002F2CC(&this->actor, play, 100.0f);
+        Actor_OfferTalk(&this->actor, play, 100.0f);
     }
     return 0;
 }
@@ -196,7 +194,7 @@ void func_80AAF330(EnMm2* this, PlayState* play) {
         if (!(this->unk_1F4 & 2)) {
             Message_CloseTextbox(play);
         }
-        gSaveContext.timer2State = 0;
+        gSaveContext.subTimerState = SUBTIMER_STATE_OFF;
         gSaveContext.eventInf[1] &= ~1;
     }
 }
@@ -237,7 +235,7 @@ void func_80AAF3C0(EnMm2* this, PlayState* play) {
 
     if (Actor_TextboxIsClosing(&this->actor, play)) {
         if (this->actor.textId == 0x607F) {
-            func_80088AA0(0);
+            Interface_SetSubTimer(0);
             this->actionFunc = func_80AAF57C;
         } else {
             this->actionFunc = func_80AAF57C;
@@ -268,15 +266,15 @@ void func_80AAF668(EnMm2* this, PlayState* play) {
     this->actor.world.rot.y = -0x3E80;
     this->actor.shape.rot.y = this->actor.world.rot.y;
     SkelAnime_Update(&this->skelAnime);
-    if (((void)0, gSaveContext.timer2Value) < HIGH_SCORE(HS_MARATHON)) {
+    if (((void)0, gSaveContext.subTimerSeconds) < HIGH_SCORE(HS_MARATHON)) {
         this->actor.textId = 0x6085;
     } else {
         this->actor.textId = 0x6084;
     }
     if (func_80AAF224(this, play, func_80AAF5EC)) {
         this->unk_1F6 = 0;
-        if (((void)0, gSaveContext.timer2Value) < HIGH_SCORE(HS_MARATHON)) {
-            HIGH_SCORE(HS_MARATHON) = gSaveContext.timer2Value;
+        if (((void)0, gSaveContext.subTimerSeconds) < HIGH_SCORE(HS_MARATHON)) {
+            HIGH_SCORE(HS_MARATHON) = gSaveContext.subTimerSeconds;
         }
     } else {
         LOG_HEX("((z_common_data.event_inf[1]) & (0x0001))", gSaveContext.eventInf[1] & 1);
@@ -294,7 +292,7 @@ void EnMm2_Update(Actor* thisx, PlayState* play) {
     s32 pad;
 
     if (this->unk_1F4 & 1) {
-        func_80038290(play, &this->actor, &this->unk_1E8, &this->unk_1EE, this->actor.focus.pos);
+        Actor_TrackPlayer(play, &this->actor, &this->unk_1E8, &this->unk_1EE, this->actor.focus.pos);
     } else {
         Math_SmoothStepToS(&this->unk_1E8.x, 0, 6, 6200, 100);
         Math_SmoothStepToS(&this->unk_1E8.y, 0, 6, 6200, 100);
@@ -304,7 +302,7 @@ void EnMm2_Update(Actor* thisx, PlayState* play) {
     this->actionFunc(this, play);
     Collider_UpdateCylinder(&this->actor, &this->collider);
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);
-    Actor_MoveForward(&this->actor);
+    Actor_MoveXZGravity(&this->actor);
     Actor_UpdateBgCheckInfo(play, &this->actor, 0.0f, 0.0f, 0.0f, 4);
 }
 

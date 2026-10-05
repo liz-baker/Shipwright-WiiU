@@ -118,7 +118,8 @@ void func_8088E518(BgHidanSima* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
 
     Math_StepToF(&this->dyna.actor.world.pos.y, this->dyna.actor.home.pos.y, 3.4f);
-    if (func_8004356C(&this->dyna) && !(player->stateFlags1 & (PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE))) {
+    if (DynaPolyActor_IsPlayerOnTop(&this->dyna) &&
+        !(player->stateFlags1 & (PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE))) {
         this->timer = 20;
         this->dyna.actor.world.rot.y = Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x4000;
         if (this->dyna.actor.home.pos.y <= this->dyna.actor.world.pos.y) {
@@ -144,13 +145,13 @@ void func_8088E5D0(BgHidanSima* this, PlayState* play) {
         this->dyna.actor.world.pos.z = this->dyna.actor.home.pos.z;
     }
     if (!(this->timer % 4)) {
-        func_800AA000(this->dyna.actor.xyzDistToPlayerSq, 180, 10, 100);
+        Rumble_Request(this->dyna.actor.xyzDistToPlayerSq, 180, 10, 100);
         Audio_PlayActorSound2(&this->dyna.actor, NA_SE_EV_BLOCK_SHAKE);
     }
 }
 
 void func_8088E6D0(BgHidanSima* this, PlayState* play) {
-    if (func_8004356C(&this->dyna)) {
+    if (DynaPolyActor_IsPlayerOnTop(&this->dyna)) {
         this->timer = 20;
     } else if (this->timer != 0) {
         this->timer--;
@@ -189,7 +190,7 @@ void func_8088E7A8(BgHidanSima* this, PlayState* play) {
         this->timer = 20;
         this->actionFunc = func_8088E760;
     }
-    func_8002F974(&this->dyna.actor, NA_SE_EV_FIRE_PILLAR - SFX_FLAG);
+    Actor_PlaySfx_Flagged(&this->dyna.actor, NA_SE_EV_FIRE_PILLAR - SFX_FLAG);
 }
 
 void func_8088E90C(BgHidanSima* this) {
@@ -259,18 +260,14 @@ Gfx* func_8088EB54(PlayState* play, BgHidanSima* this, Gfx* gfx) {
         mtxF.zz += 0.4f;
 
         gSPSegment(gfx++, 0x09, SEGMENTED_TO_VIRTUAL(sFireballsTexs[(this->timer + s3) % 7]));
-        gSPMatrix(gfx++,
-                  Matrix_MtxFToMtx(MATRIX_CHECKFLOATS(&mtxF),
-                                   Graph_Alloc(play->state.gfxCtx, sizeof(Mtx))),
+        gSPMatrix(gfx++, Matrix_MtxFToMtx(MATRIX_CHECKFLOATS(&mtxF), Graph_Alloc(play->state.gfxCtx, sizeof(Mtx))),
                   G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(gfx++, gFireTempleFireballDL);
     }
     mtxF.xw = this->dyna.actor.world.pos.x + (phi_s5 * 25 + 80) * sin;
     mtxF.zw = this->dyna.actor.world.pos.z + (phi_s5 * 25 + 80) * cos;
     gSPSegment(gfx++, 0x09, SEGMENTED_TO_VIRTUAL(sFireballsTexs[(this->timer + s3) % 7]));
-    gSPMatrix(gfx++,
-              Matrix_MtxFToMtx(MATRIX_CHECKFLOATS(&mtxF),
-                               Graph_Alloc(play->state.gfxCtx, sizeof(Mtx))),
+    gSPMatrix(gfx++, Matrix_MtxFToMtx(MATRIX_CHECKFLOATS(&mtxF), Graph_Alloc(play->state.gfxCtx, sizeof(Mtx))),
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(gfx++, gFireTempleFireballDL);
     return gfx;
@@ -281,8 +278,7 @@ void BgHidanSima_Draw(Actor* thisx, PlayState* play) {
 
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     if (this->dyna.actor.params == 0) {
         gSPDisplayList(POLY_OPA_DISP++, gFireTempleStonePlatform1DL);
     } else {

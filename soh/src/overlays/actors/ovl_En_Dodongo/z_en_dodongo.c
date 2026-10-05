@@ -4,7 +4,7 @@
 #include "objects/object_dodongo/object_dodongo.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_WHILE_CULLED)
+#define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
 typedef enum {
     DODONGO_SWEEP_TAIL,
@@ -318,8 +318,7 @@ void EnDodongo_Init(Actor* thisx, PlayState* play) {
     this->bodyScale.x = this->bodyScale.y = this->bodyScale.z = 1.0f;
     ActorShape_Init(&this->actor.shape, 0.0f, ActorShadow_DrawCircle, 48.0f);
     Actor_SetScale(&this->actor, 0.01875f);
-    SkelAnime_Init(play, &this->skelAnime, &gDodongoSkel, &gDodongoWaitAnim, this->jointTable, this->morphTable,
-                   31);
+    SkelAnime_Init(play, &this->skelAnime, &gDodongoSkel, &gDodongoWaitAnim, this->jointTable, this->morphTable, 31);
     this->actor.colChkInfo.health = 4;
     this->actor.colChkInfo.mass = MASS_HEAVY;
     this->actor.colChkInfo.damageTable = &sDamageTable;
@@ -354,8 +353,6 @@ void EnDodongo_Destroy(Actor* thisx, PlayState* play) {
     Collider_DestroyTris(play, &this->colliderHard);
     Collider_DestroyJntSph(play, &this->colliderBody);
     Collider_DestroyQuad(play, &this->colliderAT);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void EnDodongo_SetupIdle(EnDodongo* this) {
@@ -566,12 +563,12 @@ void EnDodongo_Walk(EnDodongo* this, PlayState* play) {
 
     if (Math_Vec3f_DistXZ(&this->actor.home.pos, &player->actor.world.pos) < 400.0f) {
         Math_SmoothStepToS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 1, 0x1F4, 0);
-        this->actor.flags |= ACTOR_FLAG_TARGETABLE;
+        this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
         if ((this->actor.xzDistToPlayer < 100.0f) && (yawDiff < 0x1388) && (this->actor.yDistToPlayer < 60.0f)) {
             EnDodongo_SetupBreatheFire(this);
         }
     } else {
-        this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+        this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
         if ((Math_Vec3f_DistXZ(&this->actor.world.pos, &this->actor.home.pos) > 150.0f) || (this->retreatTimer != 0)) {
             s16 yawToHome = Math_Vec3f_Yaw(&this->actor.world.pos, &this->actor.home.pos);
 
@@ -666,7 +663,7 @@ void EnDodongo_SetupDeath(EnDodongo* this, PlayState* play) {
     this->timer = 0;
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_DODO_J_DEAD);
     this->actionState = DODONGO_DEATH;
-    this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+    this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
     this->actor.speedXZ = 0.0f;
     EnDodongo_SetupAction(this, EnDodongo_Death);
     GameInteractor_ExecuteOnEnemyDefeat(&this->actor);
@@ -685,7 +682,7 @@ void EnDodongo_Death(EnDodongo* this, PlayState* play) {
     if (SkelAnime_Update(&this->skelAnime) != 0) {
         if (this->timer == 0) {
             bomb = (EnBom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, this->actor.world.pos.x,
-                                       this->actor.world.pos.y, this->actor.world.pos.z, 0, 0, 6, BOMB_BODY, true);
+                                       this->actor.world.pos.y, this->actor.world.pos.z, 0, 0, 6, BOMB_BODY);
             if (bomb != NULL) {
                 bomb->timer = 0;
                 this->timer = 8;
@@ -773,9 +770,9 @@ void EnDodongo_Update(Actor* thisx, PlayState* play) {
     EnDodongo_CollisionCheck(this, play);
     if (this->actor.colChkInfo.damageEffect != 0xE) {
         this->actionFunc(this, play);
-        Actor_MoveForward(&this->actor);
+        Actor_MoveXZGravity(&this->actor);
         Actor_UpdateBgCheckInfo(play, &this->actor, 75.0f, 60.0f, 70.0f, 0x1D);
-        if (this->actor.bgCheckFlags & 2) {
+        if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND_TOUCH) {
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_RIZA_DOWN);
         }
     }
@@ -799,8 +796,7 @@ void EnDodongo_Update(Actor* thisx, PlayState* play) {
     this->actor.focus.pos.z = this->actor.world.pos.z + Math_CosS(this->actor.shape.rot.y) * -30.0f;
 }
 
-s32 EnDodongo_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
-                               void* thisx) {
+s32 EnDodongo_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
     EnDodongo* this = (EnDodongo*)thisx;
 
     if ((limbIndex == 15) || (limbIndex == 16)) {
@@ -923,16 +919,15 @@ void EnDodongo_Draw(Actor* thisx, PlayState* play2) {
     s32 index;
 
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, EnDodongo_OverrideLimbDraw,
-                      EnDodongo_PostLimbDraw, this);
+    SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, EnDodongo_OverrideLimbDraw, EnDodongo_PostLimbDraw, this);
 
     if (this->iceTimer != 0) {
         this->actor.colorFilterTimer++;
         this->iceTimer--;
         if ((this->iceTimer % 4) == 0) {
             index = this->iceTimer >> 2;
-            EffectSsEnIce_SpawnFlyingVec3f(play, &this->actor, &this->icePos[index], 150, 150, 150, 250, 235, 245,
-                                           255, 1.8f);
+            EffectSsEnIce_SpawnFlyingVec3f(play, &this->actor, &this->icePos[index], 150, 150, 150, 250, 235, 245, 255,
+                                           1.8f);
         }
     }
 }

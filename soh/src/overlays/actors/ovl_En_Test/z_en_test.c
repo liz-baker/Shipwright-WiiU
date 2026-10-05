@@ -8,7 +8,7 @@
 #include "objects/object_sk2/object_sk2.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_WHILE_CULLED)
+#define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
 void EnTest_Init(Actor* thisx, PlayState* play);
 void EnTest_Destroy(Actor* thisx, PlayState* play);
@@ -259,8 +259,8 @@ void EnTest_Init(Actor* thisx, PlayState* play) {
 
     Actor_ProcessInitChain(&this->actor, sInitChain);
 
-    SkelAnime_Init(play, &this->skelAnime, &gStalfosSkel, &gStalfosMiddleGuardAnim, this->jointTable,
-                   this->morphTable, STALFOS_LIMB_MAX);
+    SkelAnime_Init(play, &this->skelAnime, &gStalfosSkel, &gStalfosMiddleGuardAnim, this->jointTable, this->morphTable,
+                   STALFOS_LIMB_MAX);
     SkelAnime_Init(play, &this->upperSkelanime, &gStalfosSkel, &gStalfosMiddleGuardAnim, this->upperJointTable,
                    this->upperMorphTable, STALFOS_LIMB_MAX);
 
@@ -306,7 +306,7 @@ void EnTest_Init(Actor* thisx, PlayState* play) {
     }
 
     if (this->actor.params == STALFOS_TYPE_INVISIBLE) {
-        this->actor.flags |= ACTOR_FLAG_LENS;
+        this->actor.flags |= ACTOR_FLAG_REACT_TO_LENS;
     }
 }
 
@@ -322,9 +322,6 @@ void EnTest_Destroy(Actor* thisx, PlayState* play) {
     Collider_DestroyCylinder(play, &this->shieldCollider);
     Collider_DestroyCylinder(play, &this->bodyCollider);
     Collider_DestroyQuad(play, &this->swordCollider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
-    ResourceMgr_UnregisterSkeleton(&this->upperSkelanime);
 }
 
 /**
@@ -407,7 +404,7 @@ void EnTest_ChooseAction(EnTest* this, PlayState* play) {
         } else {
             if (this->actor.xzDistToPlayer < 110.0f) {
                 if (Rand_ZeroOne() > 0.2f) {
-                    if (player->stateFlags1 & PLAYER_STATE1_ENEMY_TARGET) {
+                    if (player->stateFlags1 & PLAYER_STATE1_HOSTILE_LOCK_ON) {
                         if (this->actor.isTargeted) {
                             EnTest_SetupSlashDown(this);
                         } else {
@@ -432,7 +429,7 @@ void EnTest_SetupWaitGround(EnTest* this) {
     this->timer = 15;
     this->actor.scale.y = 0.0f;
     this->actor.world.pos.y = this->actor.home.pos.y - 3.5f;
-    this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+    this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
     EnTest_SetupAction(this, EnTest_WaitGround);
 }
 
@@ -462,7 +459,7 @@ void EnTest_SetupWaitAbove(EnTest* this) {
     this->unk_7C8 = 0;
     this->actor.world.pos.y = this->actor.home.pos.y + 150.0f;
     Actor_SetScale(&this->actor, 0.0f);
-    this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+    this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
     EnTest_SetupAction(this, EnTest_WaitAbove);
 }
 
@@ -472,7 +469,7 @@ void EnTest_WaitAbove(EnTest* this, PlayState* play) {
 
     if ((this->actor.xzDistToPlayer < 200.0f) && (ABS(this->actor.yDistToPlayer) < 450.0f)) {
         EnTest_SetupAction(this, EnTest_Fall);
-        this->actor.flags |= ACTOR_FLAG_TARGETABLE;
+        this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
         this->actor.shape.rot.y = this->actor.world.rot.y = this->actor.yawTowardsPlayer;
         Actor_SetScale(&this->actor, 0.015f);
     }
@@ -693,7 +690,7 @@ void EnTest_WalkAndBlock(EnTest* this, PlayState* play) {
 
         if (this->actor.xzDistToPlayer < 110.0f) {
             if (Rand_ZeroOne() > 0.2f) {
-                if (player->stateFlags1 & PLAYER_STATE1_ENEMY_TARGET) {
+                if (player->stateFlags1 & PLAYER_STATE1_HOSTILE_LOCK_ON) {
                     if (this->actor.isTargeted) {
                         EnTest_SetupSlashDown(this);
                     } else {
@@ -821,10 +818,10 @@ void func_80860F84(EnTest* this, PlayState* play) {
             }
         }
 
-        if ((this->actor.bgCheckFlags & 8) ||
+        if ((this->actor.bgCheckFlags & BGCHECKFLAG_WALL) ||
             ((this->actor.params == STALFOS_TYPE_CEILING) &&
              !Actor_TestFloorInDirection(&this->actor, play, this->actor.speedXZ, this->actor.world.rot.y))) {
-            if (this->actor.bgCheckFlags & 8) {
+            if (this->actor.bgCheckFlags & BGCHECKFLAG_WALL) {
                 if (this->actor.speedXZ >= 0.0f) {
                     newYaw = this->actor.shape.rot.y + 0x3FFF;
                 } else {
@@ -978,7 +975,7 @@ void EnTest_SlashDownEnd(EnTest* this, PlayState* play) {
             if ((ABS(yawDiff) > 0x3E80) && (this->actor.params != STALFOS_TYPE_CEILING)) {
                 this->actor.world.rot.y = this->actor.yawTowardsPlayer;
                 EnTest_SetupJumpBack(this);
-            } else if (player->stateFlags1 & PLAYER_STATE1_ENEMY_TARGET) {
+            } else if (player->stateFlags1 & PLAYER_STATE1_HOSTILE_LOCK_ON) {
                 if (this->actor.isTargeted) {
                     EnTest_SetupSlashDown(this);
                 } else if ((play->gameplayFrames % 2) != 0) {
@@ -1070,7 +1067,7 @@ void EnTest_JumpBack(EnTest* this, PlayState* play) {
                     this->timer = (Rand_ZeroOne() * 5.0f) + 5.0f;
                 }
             }
-            this->actor.flags |= ACTOR_FLAG_TARGETABLE;
+            this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
         }
     } else if (this->skelAnime.curFrame == (this->skelAnime.endFrame - 4.0f)) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_DODO_M_GND);
@@ -1227,8 +1224,9 @@ void func_808621D4(EnTest* this, PlayState* play) {
     if (SkelAnime_Update(&this->skelAnime)) {
         this->actor.speedXZ = 0.0f;
 
-        if ((this->actor.bgCheckFlags & 8) && ((ABS((s16)(this->actor.wallYaw - this->actor.shape.rot.y)) < 0x38A4) &&
-                                               (this->actor.xzDistToPlayer < 80.0f))) {
+        if ((this->actor.bgCheckFlags & BGCHECKFLAG_WALL) &&
+            ((ABS((s16)(this->actor.wallYaw - this->actor.shape.rot.y)) < 0x38A4) &&
+             (this->actor.xzDistToPlayer < 80.0f))) {
             EnTest_SetupJumpUp(this);
         } else if (!EnTest_ReactToProjectile(play, this)) {
             EnTest_ChooseAction(this, play);
@@ -1238,8 +1236,9 @@ void func_808621D4(EnTest* this, PlayState* play) {
     }
 
     if (player->meleeWeaponState != 0) {
-        if ((this->actor.bgCheckFlags & 8) && ((ABS((s16)(this->actor.wallYaw - this->actor.shape.rot.y)) < 0x38A4) &&
-                                               (this->actor.xzDistToPlayer < 80.0f))) {
+        if ((this->actor.bgCheckFlags & BGCHECKFLAG_WALL) &&
+            ((ABS((s16)(this->actor.wallYaw - this->actor.shape.rot.y)) < 0x38A4) &&
+             (this->actor.xzDistToPlayer < 80.0f))) {
             EnTest_SetupJumpUp(this);
         } else if ((Rand_ZeroOne() > 0.7f) && (this->actor.params != STALFOS_TYPE_CEILING) &&
                    (player->meleeWeaponAnimation != 0x11)) {
@@ -1277,8 +1276,9 @@ void func_80862418(EnTest* this, PlayState* play) {
     }
 
     if (player->meleeWeaponState != 0) {
-        if ((this->actor.bgCheckFlags & 8) && ((ABS((s16)(this->actor.wallYaw - this->actor.shape.rot.y)) < 0x38A4) &&
-                                               (this->actor.xzDistToPlayer < 80.0f))) {
+        if ((this->actor.bgCheckFlags & BGCHECKFLAG_WALL) &&
+            ((ABS((s16)(this->actor.wallYaw - this->actor.shape.rot.y)) < 0x38A4) &&
+             (this->actor.xzDistToPlayer < 80.0f))) {
             EnTest_SetupJumpUp(this);
         } else if ((Rand_ZeroOne() > 0.7f) && (this->actor.params != STALFOS_TYPE_CEILING) &&
                    (player->meleeWeaponAnimation != 0x11)) {
@@ -1323,7 +1323,7 @@ void EnTest_Stunned(EnTest* this, PlayState* play) {
         if (this->actor.colChkInfo.health == 0) {
             func_80862FA8(this, play);
         } else if (player->meleeWeaponState != 0) {
-            if ((this->actor.bgCheckFlags & 8) &&
+            if ((this->actor.bgCheckFlags & BGCHECKFLAG_WALL) &&
                 ((ABS((s16)(this->actor.wallYaw - this->actor.shape.rot.y)) < 0x38A4) &&
                  (this->actor.xzDistToPlayer < 80.0f))) {
                 EnTest_SetupJumpUp(this);
@@ -1392,10 +1392,10 @@ void func_808628C8(EnTest* this, PlayState* play) {
         }
     }
 
-    if ((this->actor.bgCheckFlags & 8) ||
+    if ((this->actor.bgCheckFlags & BGCHECKFLAG_WALL) ||
         ((this->actor.params == STALFOS_TYPE_CEILING) &&
          !Actor_TestFloorInDirection(&this->actor, play, this->actor.speedXZ, this->actor.shape.rot.y + 0x3FFF))) {
-        if (this->actor.bgCheckFlags & 8) {
+        if (this->actor.bgCheckFlags & BGCHECKFLAG_WALL) {
             if (this->actor.speedXZ >= 0.0f) {
                 newYaw = (this->actor.shape.rot.y + 0x3FFF);
             } else {
@@ -1489,7 +1489,7 @@ void func_80862DBC(EnTest* this, PlayState* play) {
         this->meleeWeaponState = -1;
     }
 
-    this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+    this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
 
     if (this->actor.params == STALFOS_TYPE_5) {
         Actor_ChangeCategory(play, &play->actorCtx, &this->actor, ACTORCAT_PROP);
@@ -1518,7 +1518,7 @@ void func_80862E6C(EnTest* this, PlayState* play) {
             }
 
             this->actor.child = NULL;
-            this->actor.flags |= ACTOR_FLAG_TARGETABLE;
+            this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
             EnTest_SetupJumpBack(this);
         } else if ((this->actor.params == STALFOS_TYPE_5) &&
                    !Actor_FindNearby(play, &this->actor, ACTOR_EN_TEST, ACTORCAT_ENEMY, 8000.0f)) {
@@ -1538,7 +1538,7 @@ void func_80862FA8(EnTest* this, PlayState* play) {
     Animation_PlayOnce(&this->skelAnime, &gStalfosFallOverBackwardsAnim);
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_STAL_DEAD);
     this->unk_7DE = 0;
-    this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+    this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
     this->actor.colorFilterTimer = 0;
     this->actor.speedXZ = 0.0f;
 
@@ -1572,7 +1572,7 @@ void func_808630F0(EnTest* this, PlayState* play) {
     this->actor.speedXZ = 0.0f;
 
     if (this->actor.params <= STALFOS_TYPE_CEILING) {
-        this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+        this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
         EnTest_SetupAction(this, func_8086318C);
     } else {
         func_80862DBC(this, play);
@@ -1594,7 +1594,7 @@ void func_8086318C(EnTest* this, PlayState* play) {
 
 void EnTest_SetupRecoil(EnTest* this) {
     this->meleeWeaponState = 0;
-    this->skelAnime.moveFlags = 2;
+    this->skelAnime.movementFlags = 2;
     this->unk_7C8 = 0x13;
     this->skelAnime.playSpeed = -1.0f;
     this->skelAnime.startFrame = this->skelAnime.curFrame;
@@ -1711,7 +1711,7 @@ void EnTest_Update(Actor* thisx, PlayState* play) {
     EnTest_UpdateDamage(this, play);
 
     if (this->actor.colChkInfo.damageEffect != STALFOS_DMGEFF_FIREMAGIC) {
-        Actor_MoveForward(&this->actor);
+        Actor_MoveXZGravity(&this->actor);
         Actor_UpdateBgCheckInfo(play, &this->actor, 75.0f, 30.0f, 30.0f, 0x1D);
 
         if (this->actor.params == STALFOS_TYPE_1) {
@@ -1723,11 +1723,11 @@ void EnTest_Update(Actor* thisx, PlayState* play) {
             if (this->actor.floorHeight <= this->actor.home.pos.y) {
                 this->actor.floorHeight = this->actor.home.pos.y;
             }
-        } else if (this->actor.bgCheckFlags & 2) {
+        } else if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND_TOUCH) {
             floorProperty = func_80041EA4(&play->colCtx, this->actor.floorPoly, this->actor.floorBgId);
 
-            if ((floorProperty == 5) || (floorProperty == 0xC) ||
-                func_80041D4C(&play->colCtx, this->actor.floorPoly, this->actor.floorBgId) == 9) {
+            if ((floorProperty == FLOOR_PROPERTY_5) || (floorProperty == FLOOR_PROPERTY_12) ||
+                SurfaceType_GetFloorType(&play->colCtx, this->actor.floorPoly, this->actor.floorBgId) == 9) {
                 Actor_Kill(&this->actor);
                 GameInteractor_ExecuteOnEnemyDefeat(&this->actor);
                 return;
@@ -1812,10 +1812,10 @@ void EnTest_Update(Actor* thisx, PlayState* play) {
 
     if (this->actor.params == STALFOS_TYPE_INVISIBLE) {
         if (play->actorCtx.lensActive) {
-            this->actor.flags |= ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_LENS;
+            this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_REACT_TO_LENS;
             this->actor.shape.shadowDraw = ActorShadow_DrawFeet;
         } else {
-            this->actor.flags &= ~(ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_LENS);
+            this->actor.flags &= ~(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_REACT_TO_LENS);
             this->actor.shape.shadowDraw = NULL;
         }
     }
@@ -1833,13 +1833,13 @@ s32 EnTest_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* 
         OPEN_DISPS(play->state.gfxCtx);
 
         gDPPipeSync(POLY_OPA_DISP++);
-        gDPSetEnvColor(POLY_OPA_DISP++, 80 + ABS((s16)(Math_SinS(play->gameplayFrames * 2000) * 175.0f)), 0, 0,
-                       255);
+        gDPSetEnvColor(POLY_OPA_DISP++, 80 + ABS((s16)(Math_SinS(play->gameplayFrames * 2000) * 175.0f)), 0, 0, 255);
 
         CLOSE_DISPS(play->state.gfxCtx);
     }
 
-    if ((this->actor.params == STALFOS_TYPE_INVISIBLE) && !CHECK_FLAG_ALL(this->actor.flags, ACTOR_FLAG_LENS)) {
+    if ((this->actor.params == STALFOS_TYPE_INVISIBLE) &&
+        !CHECK_FLAG_ALL(this->actor.flags, ACTOR_FLAG_REACT_TO_LENS)) {
         *dList = NULL;
     }
 
@@ -1958,8 +1958,7 @@ void EnTest_Draw(Actor* thisx, PlayState* play) {
     func_8002EBCC(&this->actor, play, 1);
 
     if ((thisx->params <= STALFOS_TYPE_CEILING) || (thisx->child == NULL)) {
-        SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, EnTest_OverrideLimbDraw,
-                          EnTest_PostLimbDraw, this);
+        SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, EnTest_OverrideLimbDraw, EnTest_PostLimbDraw, this);
     }
 
     if (this->iceTimer != 0) {
@@ -1969,8 +1968,8 @@ void EnTest_Draw(Actor* thisx, PlayState* play) {
         if ((this->iceTimer % 4) == 0) {
             s32 iceIndex = this->iceTimer >> 2;
 
-            EffectSsEnIce_SpawnFlyingVec3s(play, thisx, &this->bodyPartsPos[iceIndex], 150, 150, 150, 250, 235,
-                                           245, 255, 1.5f);
+            EffectSsEnIce_SpawnFlyingVec3s(play, thisx, &this->bodyPartsPos[iceIndex], 150, 150, 150, 250, 235, 245,
+                                           255, 1.5f);
         }
     }
 }
@@ -2001,7 +2000,7 @@ s32 EnTest_ReactToProjectile(PlayState* play, EnTest* this) {
     if (projectileActor != NULL) {
         yawToProjectile = Actor_WorldYawTowardActor(&this->actor, projectileActor) - (u16)this->actor.shape.rot.y;
 
-        if ((u8)(this->actor.bgCheckFlags & 8)) {
+        if ((u8)(this->actor.bgCheckFlags & BGCHECKFLAG_WALL)) {
             wallYawDiff = ((u16)this->actor.wallYaw - (u16)this->actor.shape.rot.y);
             touchingWall = true;
         } else {

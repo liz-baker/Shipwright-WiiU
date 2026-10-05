@@ -57,6 +57,12 @@ void aHiLoGainImpl(uint8_t g, uint16_t count, uint16_t addr);
 void aUnkCmd3Impl(uint16_t a, uint16_t b, uint16_t c);
 void aUnkCmd19Impl(uint8_t f, uint16_t count, uint16_t out_addr, uint16_t in_addr);
 
+struct OpusDecState;
+
+void aOPUSdecImpl(void* source_addr, uint16_t dest_addr, uint16_t nbytes, struct OpusDecState** decState, int32_t pos,
+                  uint32_t size);
+void aOPUSFree(struct OpusDecState* dec);
+
 #define aSegment(pkt, s, b) \
     do {                    \
     } while (0)

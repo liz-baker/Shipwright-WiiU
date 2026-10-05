@@ -1,7 +1,8 @@
 #include "z_bg_mizu_shutter.h"
 #include "objects/object_mizu_objects/object_mizu_objects.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
-#define FLAGS ACTOR_FLAG_UPDATE_WHILE_CULLED
+#define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
 #define SIZE_PARAM (((u16)this->dyna.actor.params >> 0xC) & 0xF)
 #define TIMER_PARAM (((u16)this->dyna.actor.params >> 6) & 0x3F)
@@ -94,7 +95,7 @@ void BgMizuShutter_Destroy(BgMizuShutter* thisx, PlayState* play) {
 void BgMizuShutter_WaitForSwitch(BgMizuShutter* this, PlayState* play) {
     if (Flags_GetSwitch(play, (u16)this->dyna.actor.params & 0x3F)) {
         if (ABS(this->dyna.actor.world.rot.x) > 0x2C60) {
-            OnePointCutscene_Init(play, 4510, -99, &this->dyna.actor, MAIN_CAM);
+            OnePointCutscene_Init(play, 4510, -99, &this->dyna.actor, CAM_ID_MAIN);
         } else {
             OnePointCutscene_Attention(play, &this->dyna.actor);
         }
@@ -128,7 +129,7 @@ void BgMizuShutter_Move(BgMizuShutter* this, PlayState* play) {
         if ((this->dyna.actor.world.pos.x == this->closedPos.x) &&
             (this->dyna.actor.world.pos.y == this->closedPos.y) &&
             (this->dyna.actor.world.pos.z == this->closedPos.z)) {
-            func_800AA000(this->dyna.actor.xyzDistToPlayerSq, 0x78, 0x14, 0xA);
+            Rumble_Request(this->dyna.actor.xyzDistToPlayerSq, 0x78, 0x14, 0xA);
             Audio_PlayActorSound2(&this->dyna.actor, NA_SE_EV_STONE_BOUND);
             this->actionFunc = BgMizuShutter_WaitForSwitch;
         }
@@ -137,8 +138,10 @@ void BgMizuShutter_Move(BgMizuShutter* this, PlayState* play) {
 
 void BgMizuShutter_WaitForTimer(BgMizuShutter* this, PlayState* play) {
     if (this->timerMax != 0x3F * 20) {
-        this->timer--;
-        func_8002F994(&this->dyna.actor, this->timer);
+        if (GameInteractor_Should(VB_SWITCH_TIMER_TICK, true, this, &this->timer)) {
+            this->timer--;
+        }
+        Actor_PlaySfx_FlaggedTimer(&this->dyna.actor, this->timer);
         if (this->timer == 0) {
             Audio_PlayActorSound2(&this->dyna.actor, NA_SE_EV_METALDOOR_CLOSE);
             Flags_UnsetSwitch(play, (u16)this->dyna.actor.params & 0x3F);
@@ -160,8 +163,7 @@ void BgMizuShutter_Draw(BgMizuShutter* thisx, PlayState* play) {
 
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     if (this->displayList != NULL) {
         gSPDisplayList(POLY_OPA_DISP++, this->displayList);

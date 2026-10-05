@@ -8,8 +8,10 @@
 #include "objects/object_firefly/object_firefly.h"
 #include "overlays/actors/ovl_Obj_Syokudai/z_obj_syokudai.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include <libultraship/bridge/consolevariablebridge.h>
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_IGNORE_QUAKE | ACTOR_FLAG_ARROW_DRAGGABLE)
+#define FLAGS \
+    (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_IGNORE_QUAKE | ACTOR_FLAG_CAN_ATTACH_TO_ARROW)
 
 void EnFirefly_Init(Actor* thisx, PlayState* play);
 void EnFirefly_Destroy(Actor* thisx, PlayState* play);
@@ -143,14 +145,13 @@ void EnFirefly_Init(Actor* thisx, PlayState* play) {
 
     Actor_ProcessInitChain(&this->actor, sInitChain);
     ActorShape_Init(&this->actor.shape, 0.0f, ActorShadow_DrawCircle, 25.0f);
-    SkelAnime_Init(play, &this->skelAnime, &gKeeseSkeleton, &gKeeseFlyAnim, this->jointTable, this->morphTable,
-                   28);
+    SkelAnime_Init(play, &this->skelAnime, &gKeeseSkeleton, &gKeeseFlyAnim, this->jointTable, this->morphTable, 28);
     Collider_InitJntSph(play, &this->collider);
     Collider_SetJntSph(play, &this->collider, &this->actor, &sJntSphInit, this->colliderItems);
     CollisionCheck_SetInfo(&this->actor.colChkInfo, &sDamageTable, &sColChkInfoInit);
 
     if ((this->actor.params & 0x8000) != 0) {
-        this->actor.flags |= ACTOR_FLAG_LENS;
+        this->actor.flags |= ACTOR_FLAG_REACT_TO_LENS;
         this->actor.draw = EnFirefly_DrawInvisible;
         this->actor.params &= 0x7FFF;
     }
@@ -199,8 +200,6 @@ void EnFirefly_Destroy(Actor* thisx, PlayState* play) {
     EnFirefly* this = (EnFirefly*)thisx;
 
     Collider_DestroyJntSph(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void EnFirefly_SetupFlyIdle(EnFirefly* this) {
@@ -217,7 +216,7 @@ void EnFirefly_SetupFall(EnFirefly* this) {
     this->actor.velocity.y = 0.0f;
     Animation_Change(&this->skelAnime, &gKeeseFlyAnim, 0.5f, 0.0f, 0.0f, ANIMMODE_LOOP_INTERP, -3.0f);
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FFLY_DEAD);
-    this->actor.flags |= ACTOR_FLAG_UPDATE_WHILE_CULLED;
+    this->actor.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
     Actor_SetColorFilter(&this->actor, 0x4000, 0xFF, 0, 40);
     this->actionFunc = EnFirefly_Fall;
 }
@@ -266,7 +265,7 @@ void EnFirefly_SetupFrozenFall(EnFirefly* this, PlayState* play) {
     s32 i;
     Vec3f iceParticlePos;
 
-    this->actor.flags |= ACTOR_FLAG_UPDATE_WHILE_CULLED;
+    this->actor.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
     this->auraType = KEESE_AURA_NONE;
     this->actor.speedXZ = 0.0f;
     Actor_SetColorFilter(&this->actor, 0, 0xFF, 0, 0xFF);
@@ -403,7 +402,7 @@ void EnFirefly_FlyIdle(EnFirefly* this, PlayState* play) {
                 this->targetPitch = 0x2154;
             }
         } else {
-            if (this->actor.bgCheckFlags & 1) {
+            if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) {
                 this->targetPitch = 0x954;
             } else if ((this->actor.bgCheckFlags & 0x10) || (this->maxAltitude < this->actor.world.pos.y)) {
                 this->targetPitch = 0x2154;
@@ -411,12 +410,11 @@ void EnFirefly_FlyIdle(EnFirefly* this, PlayState* play) {
         }
         Math_ScaledStepToS(&this->actor.shape.rot.x, this->targetPitch, 0x100);
     }
-    if (this->actor.bgCheckFlags & 8) {
+    if (this->actor.bgCheckFlags & BGCHECKFLAG_WALL) {
         Math_SmoothStepToS(&this->actor.shape.rot.y, this->actor.wallYaw, 2, 0xC00, 0x300);
     }
-    if ((this->timer == 0) && (this->actor.xzDistToPlayer < 200.0f) &&
-        (Player_GetMask(play) != PLAYER_MASK_SKULL) &&
-        !CVarGetInteger(CVAR_CHEAT("NoKeeseGuayTarget"), 0)) {
+    if ((this->timer == 0) && (this->actor.xzDistToPlayer < 200.0f) && (Player_GetMask(play) != PLAYER_MASK_SKULL) &&
+        GameInteractor_Should(VB_KEESE_DO_DIVE_ATTACK, true, this)) {
         EnFirefly_SetupDiveAttack(this);
     }
 }
@@ -429,7 +427,7 @@ void EnFirefly_Fall(EnFirefly* this, PlayState* play) {
     this->actor.colorFilterTimer = 40;
     SkelAnime_Update(&this->skelAnime);
     Math_StepToF(&this->actor.speedXZ, 0.0f, 0.5f);
-    if (this->actor.flags & ACTOR_FLAG_DRAGGED_BY_ARROW) {
+    if (this->actor.flags & ACTOR_FLAG_ATTACHED_TO_ARROW) {
         this->actor.colorFilterTimer = 40;
     } else {
         Math_ScaledStepToS(&this->actor.shape.rot.x, 0x6800, 0x200);
@@ -437,7 +435,7 @@ void EnFirefly_Fall(EnFirefly* this, PlayState* play) {
         if (this->timer != 0) {
             this->timer--;
         }
-        if ((this->actor.bgCheckFlags & 1) || (this->timer == 0)) {
+        if ((this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) || (this->timer == 0)) {
             EnFirefly_SetupDie(this);
         }
     }
@@ -465,7 +463,7 @@ void EnFirefly_DiveAttack(EnFirefly* this, PlayState* play) {
         this->timer--;
     }
     Math_StepToF(&this->actor.speedXZ, 4.0f, 0.5f);
-    if (this->actor.bgCheckFlags & 8) {
+    if (this->actor.bgCheckFlags & BGCHECKFLAG_WALL) {
         Math_SmoothStepToS(&this->actor.shape.rot.y, this->actor.wallYaw, 2, 0xC00, 0x300);
         Math_ScaledStepToS(&this->actor.shape.rot.x, this->targetPitch, 0x100);
     } else if (Actor_IsFacingPlayer(&this->actor, 0x2800)) {
@@ -484,7 +482,7 @@ void EnFirefly_DiveAttack(EnFirefly* this, PlayState* play) {
         if (this->actor.xzDistToPlayer > 80.0f) {
             Math_SmoothStepToS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 2, 0xC00, 0x300);
         }
-        if (this->actor.bgCheckFlags & 1) {
+        if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) {
             this->targetPitch = 0x954;
         }
         if ((this->actor.bgCheckFlags & 0x10) || (this->maxAltitude < this->actor.world.pos.y)) {
@@ -495,7 +493,7 @@ void EnFirefly_DiveAttack(EnFirefly* this, PlayState* play) {
         Math_ScaledStepToS(&this->actor.shape.rot.x, this->targetPitch, 0x100);
     }
     if ((this->timer == 0) || (Player_GetMask(play) == PLAYER_MASK_SKULL) ||
-        CVarGetInteger(CVAR_CHEAT("NoKeeseGuayTarget"), 0)) {
+        GameInteractor_Should(VB_KEESE_FORCE_FLY_AWAY, false, this)) {
         EnFirefly_SetupFlyAway(this);
     }
 }
@@ -527,14 +525,14 @@ void EnFirefly_FlyAway(EnFirefly* this, PlayState* play) {
         return;
     }
     Math_StepToF(&this->actor.speedXZ, 3.0f, 0.3f);
-    if (this->actor.bgCheckFlags & 1) {
+    if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) {
         this->targetPitch = 0x954;
     } else if ((this->actor.bgCheckFlags & 0x10) || (this->maxAltitude < this->actor.world.pos.y)) {
         this->targetPitch = 0x2154;
     } else {
         this->targetPitch = 0x954;
     }
-    if (this->actor.bgCheckFlags & 8) {
+    if (this->actor.bgCheckFlags & BGCHECKFLAG_WALL) {
         Math_SmoothStepToS(&this->actor.shape.rot.y, this->actor.wallYaw, 2, 0xC00, 0x300);
     } else {
         Math_ScaledStepToS(&this->actor.shape.rot.y, Actor_WorldYawTowardPoint(&this->actor, &this->actor.home.pos),
@@ -561,7 +559,7 @@ void EnFirefly_Stunned(EnFirefly* this, PlayState* play) {
 }
 
 void EnFirefly_FrozenFall(EnFirefly* this, PlayState* play) {
-    if ((this->actor.bgCheckFlags & 1) || (this->actor.floorHeight == BGCHECK_Y_MIN)) {
+    if ((this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) || (this->actor.floorHeight == BGCHECK_Y_MIN)) {
         this->actor.colorFilterTimer = 0;
         EnFirefly_SetupDie(this);
     } else {
@@ -633,7 +631,7 @@ void EnFirefly_UpdateDamage(EnFirefly* this, PlayState* play) {
         if ((this->actor.colChkInfo.damageEffect != 0) || (this->actor.colChkInfo.damage != 0)) {
             if (Actor_ApplyDamage(&this->actor) == 0) {
                 Enemy_StartFinishingBlow(play, &this->actor);
-                this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+                this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
             }
 
             damageEffect = this->actor.colChkInfo.damageEffect;
@@ -651,9 +649,9 @@ void EnFirefly_UpdateDamage(EnFirefly* this, PlayState* play) {
                     }
                 }
             } else if (damageEffect == 3) { // Ice Arrows or Ice Magic
-                if (this->actor.params == KEESE_ICE_FLY) {
+                if (GameInteractor_Should(VB_KEESE_SETUP_FALL, this->actor.params == KEESE_ICE_FLY, this)) {
                     EnFirefly_SetupFall(this);
-                } else {
+                } else if (GameInteractor_Should(VB_KEESE_SETUP_FROZENFALL, true, this)) {
                     EnFirefly_SetupFrozenFall(this, play);
                 }
             } else if (damageEffect == 1) { // Deku Nuts
@@ -664,7 +662,9 @@ void EnFirefly_UpdateDamage(EnFirefly* this, PlayState* play) {
                 if ((damageEffect == 0xF) && (this->actor.params == KEESE_ICE_FLY)) {
                     EnFirefly_Combust(this, play);
                 }
-                EnFirefly_SetupFall(this);
+                if (GameInteractor_Should(VB_KEESE_SETUP_FALL, true, this)) {
+                    EnFirefly_SetupFall(this);
+                }
             }
         }
     }
@@ -689,14 +689,14 @@ void EnFirefly_Update(Actor* thisx, PlayState* play2) {
 
     this->actionFunc(this, play);
 
-    if (!(this->actor.flags & ACTOR_FLAG_DRAGGED_BY_ARROW)) {
+    if (!(this->actor.flags & ACTOR_FLAG_ATTACHED_TO_ARROW)) {
         if ((this->actor.colChkInfo.health == 0) || (this->actionFunc == EnFirefly_Stunned)) {
-            Actor_MoveForward(&this->actor);
+            Actor_MoveXZGravity(&this->actor);
         } else {
             if (this->actionFunc != EnFirefly_Rebound) {
                 this->actor.world.rot.x = 0x1554 - this->actor.shape.rot.x;
             }
-            func_8002D97C(&this->actor);
+            Actor_MoveXYZ(&this->actor);
         }
     }
 
@@ -725,8 +725,8 @@ void EnFirefly_Update(Actor* thisx, PlayState* play2) {
         (10.0f * Math_SinS(this->actor.shape.rot.x) * Math_CosS(this->actor.shape.rot.y)) + this->actor.world.pos.z;
 }
 
-s32 EnFirefly_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
-                               void* thisx, Gfx** gfx) {
+s32 EnFirefly_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx,
+                               Gfx** gfx) {
     EnFirefly* this = (EnFirefly*)thisx;
 
     if ((this->actor.draw == EnFirefly_DrawInvisible) && !play->actorCtx.lensActive) {
@@ -839,8 +839,9 @@ void EnFirefly_Draw(Actor* thisx, PlayState* play) {
         gDPSetEnvColor(POLY_OPA_DISP++, 0, 0, 0, 255);
     }
 
-    POLY_OPA_DISP = SkelAnime_Draw(play, this->skelAnime.skeleton, this->skelAnime.jointTable,
-                                   EnFirefly_OverrideLimbDraw, EnFirefly_PostLimbDraw, &this->actor, POLY_OPA_DISP);
+    POLY_OPA_DISP = SkelAnime_DrawSkeleton2(play, &this->skelAnime, EnFirefly_OverrideLimbDraw, EnFirefly_PostLimbDraw,
+                                            &this->actor, POLY_OPA_DISP);
+
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
@@ -856,7 +857,7 @@ void EnFirefly_DrawInvisible(Actor* thisx, PlayState* play) {
         gDPSetEnvColor(POLY_XLU_DISP++, 0, 0, 0, 255);
     }
 
-    POLY_XLU_DISP = SkelAnime_Draw(play, this->skelAnime.skeleton, this->skelAnime.jointTable,
-                                   EnFirefly_OverrideLimbDraw, EnFirefly_PostLimbDraw, this, POLY_XLU_DISP);
+    POLY_XLU_DISP = SkelAnime_DrawSkeleton2(play, &this->skelAnime, EnFirefly_OverrideLimbDraw, EnFirefly_PostLimbDraw,
+                                            this, POLY_XLU_DISP);
     CLOSE_DISPS(play->state.gfxCtx);
 }

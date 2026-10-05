@@ -4,6 +4,7 @@
 #include "global.h"
 
 #include "soh/Enhancements/audio/AudioEditor.h"
+#include "soh/ResourceManagerHelpers.h"
 
 extern char** sequenceMap;
 
@@ -788,7 +789,7 @@ s32 AudioSeq_SeqLayerProcessScriptStep4(SequenceLayer* layer, s32 cmd) {
     layer->freqScale *= layer->unk_34;
     if (layer->delay == 0) {
         if (layer->sound != NULL) {
-            time = (f32)layer->sound->sample->loop->end;
+            time = (f32)layer->sound->sample->loop->loopEnd;
         } else {
             time = 0.0f;
         }
@@ -943,12 +944,10 @@ u8 AudioSeq_GetInstrument(SequenceChannel* channel, u8 instId, Instrument** inst
         return 0;
     }
 
-    if (inst->envelope != NULL)
-    {
+    if (inst->envelope != NULL) {
         adsr->envelope = inst->envelope;
         adsr->releaseRate = (inst->releaseRate);
-    }
-    else {
+    } else {
         adsr->envelope = gDefaultEnvelope;
     }
 
@@ -1006,6 +1005,7 @@ void AudioSeq_SequenceChannelProcessScript(SequenceChannel* channel) {
         u32 parameters[3];
         s8 signedParam;
         u8 command = AudioSeq_ScriptReadU8(scriptState);
+        u16 fontId;
         u8 lowBits;
         u8 highBits;
         s32 result;
@@ -1061,22 +1061,20 @@ void AudioSeq_SequenceChannelProcessScript(SequenceChannel* channel) {
                         break;
                     case 0xEB:
                         result = (u8)parameters[0];
-                        command = (u8)parameters[0];
+                        fontId = (u8)parameters[0];
 
-                        if (seqPlayer->defaultFont != 0xFF) 
-                        {
+                        if (seqPlayer->defaultFont != FONT_ID_NONE) {
                             if (gAudioContext.seqReplaced[seqPlayer->playerIdx]) {
                                 seqPlayer->seqId = gAudioContext.seqToPlay[seqPlayer->playerIdx];
                                 gAudioContext.seqReplaced[seqPlayer->playerIdx] = 0;
                             }
                             u16 seqId = AudioEditor_GetReplacementSeq(seqPlayer->seqId);
                             SequenceData sDat = ResourceMgr_LoadSeqByName(sequenceMap[seqId]);
-                            command = sDat.fonts[sDat.numFonts - result - 1];
+                            fontId = sDat.fonts[sDat.numFonts - result - 1];
                         }
 
-                        if (AudioHeap_SearchCaches(FONT_TABLE, CACHE_EITHER, command)) 
-                        {
-                            channel->fontId = command;
+                        if (AudioHeap_SearchCaches(FONT_TABLE, CACHE_EITHER, fontId)) {
+                            channel->fontId = fontId;
                         }
 
                         parameters[0] = parameters[1];
@@ -1178,10 +1176,9 @@ void AudioSeq_SequenceChannelProcessScript(SequenceChannel* channel) {
                         break;
                     case 0xC6:
                         result = (u8)parameters[0];
-                        command = (u8)parameters[0];
+                        fontId = (u8)parameters[0];
 
-                        if (seqPlayer->defaultFont != 0xFF) 
-                        {
+                        if (seqPlayer->defaultFont != FONT_ID_NONE) {
                             if (gAudioContext.seqReplaced[seqPlayer->playerIdx]) {
                                 seqPlayer->seqId = gAudioContext.seqToPlay[seqPlayer->playerIdx];
                                 gAudioContext.seqReplaced[seqPlayer->playerIdx] = 0;
@@ -1189,17 +1186,16 @@ void AudioSeq_SequenceChannelProcessScript(SequenceChannel* channel) {
                             u16 seqId = AudioEditor_GetReplacementSeq(seqPlayer->seqId);
                             SequenceData sDat = ResourceMgr_LoadSeqByName(sequenceMap[seqId]);
 
-                            // The game apparantely would sometimes do negative array lookups, the result of which would get rejected by AudioHeap_SearchCaches, never
-                            // changing the actual fontid.
+                            // The game apparantely would sometimes do negative array lookups, the result of which would
+                            // get rejected by AudioHeap_SearchCaches, never changing the actual fontid.
                             if (result > sDat.numFonts)
                                 break;
 
-                            command = sDat.fonts[(sDat.numFonts - result - 1)];
+                            fontId = sDat.fonts[(sDat.numFonts - result - 1)];
                         }
 
-                        if (AudioHeap_SearchCaches(FONT_TABLE, CACHE_EITHER, command)) 
-                        {
-                            channel->fontId = command;
+                        if (AudioHeap_SearchCaches(FONT_TABLE, CACHE_EITHER, fontId)) {
+                            channel->fontId = fontId;
                         }
 
                         break;
@@ -1352,7 +1348,8 @@ void AudioSeq_SequenceChannelProcessScript(SequenceChannel* channel) {
                         break;
                     case 0xB2:
                         offset = (u16)parameters[0];
-                        channel->unk_22 = BE16SWAP(*(u16*)(seqPlayer->seqData + (uintptr_t)(offset + scriptState->value * 2)));
+                        channel->unk_22 =
+                            BE16SWAP(*(u16*)(seqPlayer->seqData + (uintptr_t)(offset + scriptState->value * 2)));
                         break;
                     case 0xB4:
                         channel->dynTable = (void*)&seqPlayer->seqData[channel->unk_22];

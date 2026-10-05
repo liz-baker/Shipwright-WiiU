@@ -300,8 +300,6 @@ void EnDog_Init(Actor* thisx, PlayState* play) {
 void EnDog_Destroy(Actor* thisx, PlayState* play) {
     EnDog* this = (EnDog*)thisx;
     Collider_DestroyCylinder(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void EnDog_FollowPath(EnDog* this, PlayState* play) {
@@ -374,10 +372,12 @@ void EnDog_FollowPlayer(EnDog* this, PlayState* play) {
     }
 
     if (CVarGetInteger(CVAR_ENHANCEMENT("DogFollowsEverywhere"), 0)) {
-        // If the dog is too far away it's usually because they are stuck in a hole or on a different floor, this gives them a push
+        // If the dog is too far away it's usually because they are stuck in a hole or on a different floor, this gives
+        // them a push
         if (this->actor.xyzDistToPlayerSq > 250000.0f) {
             Player* player = GET_PLAYER(play);
-            if (PlayerGrounded(player)) this->actor.world.pos.y = player->actor.world.pos.y;
+            if (PlayerGrounded(player))
+                this->actor.world.pos.y = player->actor.world.pos.y;
         }
 
         // If doggo is in the water make sure it's floating
@@ -481,9 +481,8 @@ void EnDog_Update(Actor* thisx, PlayState* play) {
 
     EnDog_PlayAnimAndSFX(this);
     SkelAnime_Update(&this->skelAnime);
-    Actor_UpdateBgCheckInfo(play, &this->actor, this->collider.dim.radius, this->collider.dim.height * 0.5f, 0.0f,
-                            5);
-    Actor_MoveForward(&this->actor);
+    Actor_UpdateBgCheckInfo(play, &this->actor, this->collider.dim.radius, this->collider.dim.height * 0.5f, 0.0f, 5);
+    Actor_MoveXZGravity(&this->actor);
     this->actionFunc(this, play);
     Collider_UpdateCylinder(&this->actor, &this->collider);
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);

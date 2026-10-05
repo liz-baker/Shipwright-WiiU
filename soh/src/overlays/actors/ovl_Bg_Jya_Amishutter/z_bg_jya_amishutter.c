@@ -43,8 +43,7 @@ static InitChainEntry sInitChain[] = {
     ICHAIN_F32(uncullZoneDownward, 1000, ICHAIN_STOP),
 };
 
-void BgJyaAmishutter_InitDynaPoly(BgJyaAmishutter* this, PlayState* play, CollisionHeader* collision,
-                                  s32 flag) {
+void BgJyaAmishutter_InitDynaPoly(BgJyaAmishutter* this, PlayState* play, CollisionHeader* collision, s32 flag) {
     s32 pad1;
     CollisionHeader* colHeader = NULL;
     s32 pad2;
@@ -91,7 +90,7 @@ void func_80893438(BgJyaAmishutter* this) {
         func_808934B0(this);
         Audio_PlayActorSound2(&this->dyna.actor, NA_SE_EV_METALDOOR_STOP);
     } else {
-        func_8002F974(&this->dyna.actor, NA_SE_EV_METALDOOR_SLIDE - SFX_FLAG);
+        Actor_PlaySfx_Flagged(&this->dyna.actor, NA_SE_EV_METALDOOR_SLIDE - SFX_FLAG);
     }
 }
 
@@ -114,7 +113,7 @@ void func_8089350C(BgJyaAmishutter* this) {
         BgJyaAmishutter_SetupWaitForPlayer(this);
         Audio_PlayActorSound2(&this->dyna.actor, NA_SE_EV_METALDOOR_STOP);
     } else {
-        func_8002F974(&this->dyna.actor, NA_SE_EV_METALDOOR_SLIDE - SFX_FLAG);
+        Actor_PlaySfx_Flagged(&this->dyna.actor, NA_SE_EV_METALDOOR_SLIDE - SFX_FLAG);
     }
 }
 

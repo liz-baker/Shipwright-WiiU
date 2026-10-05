@@ -186,7 +186,7 @@ void BgJyaMegami_DetectLight(BgJyaMegami* this, PlayState* play) {
         if (play->gameplayFrames % 4 == 0) {
             BgJyaMegami_SetupSpawnEffect(this, play, (this->crumbleIndex * 0.04f) + 0.05f);
         }
-        func_8002F974(&this->dyna.actor, NA_SE_EV_FACE_CRUMBLE_SLOW - SFX_FLAG);
+        Actor_PlaySfx_Flagged(&this->dyna.actor, NA_SE_EV_FACE_CRUMBLE_SLOW - SFX_FLAG);
     } else if (this->lightTimer > 0) {
         this->lightTimer--;
     }
@@ -194,7 +194,7 @@ void BgJyaMegami_DetectLight(BgJyaMegami* this, PlayState* play) {
         Flags_SetSwitch(play, this->dyna.actor.params & 0x3F);
         BgJyaMegami_SetupExplode(this);
         SoundSource_PlaySfxAtFixedWorldPos(play, &this->dyna.actor.world.pos, 100, NA_SE_EV_FACE_EXPLOSION);
-        OnePointCutscene_Init(play, 3440, -99, &this->dyna.actor, MAIN_CAM);
+        OnePointCutscene_Init(play, 3440, -99, &this->dyna.actor, CAM_ID_MAIN);
     } else {
         if (this->lightTimer < 8) {
             this->crumbleIndex = 0;
@@ -275,7 +275,7 @@ void BgJyaMegami_Explode(BgJyaMegami* this, PlayState* play) {
         func_80033480(play, &sp8C, 100.0f, 1, 150, 100, 1);
     }
     if (this->explosionTimer == 60) {
-        func_80078884(NA_SE_SY_CORRECT_CHIME);
+        Sfx_PlaySfxCentered(NA_SE_SY_CORRECT_CHIME);
     }
     if (this->explosionTimer >= 100) {
         Actor_Kill(&this->dyna.actor);
@@ -304,8 +304,7 @@ void BgJyaMegami_DrawFace(BgJyaMegami* this, PlayState* play) {
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
     gSPSegment(POLY_OPA_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(sRightSideCrumbles[this->crumbleIndex]));
     gSPSegment(POLY_OPA_DISP++, 0x09, SEGMENTED_TO_VIRTUAL(sLeftSideCrumbles[this->crumbleIndex]));
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_OPA_DISP++, gMegami1DL);
 
     CLOSE_DISPS(play->state.gfxCtx);
@@ -339,10 +338,9 @@ void BgJyaMegami_DrawExplode(BgJyaMegami* this, PlayState* play) {
         Matrix_Translate(sPiecesInit[i].unk_00.x * -10.0f, sPiecesInit[i].unk_00.y * -10.0f,
                          sPiecesInit[i].unk_00.z * -10.0f, MTXMODE_APPLY);
 
-        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                  G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_OPA_DISP++, sDLists[i]);
-        
+
         FrameInterpolation_RecordCloseChild();
     }
 

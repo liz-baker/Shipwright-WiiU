@@ -7,7 +7,7 @@
 #include "z_bg_mori_rakkatenjo.h"
 #include "objects/object_mori_objects/object_mori_objects.h"
 
-#define FLAGS (ACTOR_FLAG_UPDATE_WHILE_CULLED | ACTOR_FLAG_DRAW_WHILE_CULLED)
+#define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
 void BgMoriRakkatenjo_Init(Actor* thisx, PlayState* play);
 void BgMoriRakkatenjo_Destroy(Actor* thisx, PlayState* play);
@@ -133,7 +133,7 @@ void BgMoriRakkatenjo_Wait(BgMoriRakkatenjo* this, PlayState* play) {
         }
     }
     if (this->timer < 20) {
-        func_800788CC(NA_SE_EV_BLOCKSINK - SFX_FLAG);
+        Sfx_PlaySfxCentered2(NA_SE_EV_BLOCKSINK - SFX_FLAG);
     }
 }
 
@@ -149,15 +149,15 @@ void BgMoriRakkatenjo_Fall(BgMoriRakkatenjo* this, PlayState* play) {
     Actor* thisx = &this->dyna.actor;
     s32 quake;
 
-    Actor_MoveForward(thisx);
+    Actor_MoveXZGravity(thisx);
     if ((thisx->velocity.y < 0.0f) && (thisx->world.pos.y <= 403.0f)) {
         if (this->bounceCount >= ARRAY_COUNT(bounceVel)) {
             BgMoriRakkatenjo_SetupRest(this);
         } else {
             if (this->bounceCount == 0) {
                 this->fallCount++;
-                func_800788CC(NA_SE_EV_STONE_BOUND);
-                func_800AA000(SQ(thisx->yDistToPlayer), 0xFF, 0x14, 0x96);
+                Sfx_PlaySfxCentered2(NA_SE_EV_STONE_BOUND);
+                Rumble_Request(SQ(thisx->yDistToPlayer), 0xFF, 0x14, 0x96);
             }
             thisx->world.pos.y =
                 403.0f - (thisx->world.pos.y - 403.0f) * bounceVel[this->bounceCount] / fabsf(thisx->velocity.y);
@@ -207,13 +207,13 @@ void BgMoriRakkatenjo_Update(Actor* thisx, PlayState* play) {
     if (BgMoriRakkatenjo_IsLinkUnder(this, play)) {
         if (sCamSetting == CAM_SET_NONE) {
             osSyncPrintf("camera changed (mori rakka tenjyo) ... \n");
-            sCamSetting = play->cameraPtrs[MAIN_CAM]->setting;
-            Camera_SetCameraData(play->cameraPtrs[MAIN_CAM], 1, &this->dyna.actor, NULL, 0, 0, 0);
-            Camera_ChangeSetting(play->cameraPtrs[MAIN_CAM], CAM_SET_FOREST_BIRDS_EYE);
+            sCamSetting = play->cameraPtrs[CAM_ID_MAIN]->setting;
+            Camera_SetCameraData(play->cameraPtrs[CAM_ID_MAIN], 1, &this->dyna.actor, NULL, 0, 0, 0);
+            Camera_RequestSetting(play->cameraPtrs[CAM_ID_MAIN], CAM_SET_FOREST_BIRDS_EYE);
         }
     } else if (sCamSetting != CAM_SET_NONE) {
         osSyncPrintf("camera changed (previous) ... \n");
-        Camera_ChangeSetting(play->cameraPtrs[MAIN_CAM], CAM_SET_DUNGEON1);
+        Camera_RequestSetting(play->cameraPtrs[CAM_ID_MAIN], CAM_SET_DUNGEON1);
         sCamSetting = 0;
     }
 }
@@ -227,8 +227,7 @@ void BgMoriRakkatenjo_Draw(Actor* thisx, PlayState* play) {
 
     gSPSegment(POLY_OPA_DISP++, 0x08, play->objectCtx.status[this->moriTexObjIndex].segment);
 
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     gSPDisplayList(POLY_OPA_DISP++, gMoriRakkatenjoDL);
 

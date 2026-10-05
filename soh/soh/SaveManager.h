@@ -1,12 +1,12 @@
 #pragma once
 
-#include <libultraship/libultra/gbi.h>
+#include "z64save.h"
 
 #define SECTION_PARENT_NONE -1
 typedef struct {
     u8 valid;
     u16 deaths;
-    char playerName[8];
+    u8 playerName[8];
     u16 healthCapacity;
     u32 questItems;
     s8 defense;
@@ -14,7 +14,7 @@ typedef struct {
     u32 requiresMasterQuest;
     u32 requiresOriginal;
     u8 seedHash[5];
-    u8 randoSave;
+    u8 quest;
     char buildVersion[50];
     s16 buildVersionMajor;
     s16 buildVersionMinor;
@@ -28,14 +28,25 @@ typedef struct {
     s16 rupees;
     s16 gsTokens;
     u8 isDoubleDefenseAcquired;
-    u8 gregFound;
+    s32 filenameLanguage;
+    bool gregFound;
+    bool hasWallet;
+    u8 triforcePieces;
+    u8 maxTriforcePieces;
+    bool hasFishingRod;
+    bool fishingPoleShuffled;
 } SaveFileMetaInfo;
+
+typedef enum {
+    /* 0 */ NAME_LANGUAGE_PAL,
+    /* 1 */ NAME_LANGUAGE_NTSC_JPN,
+    /* 2 */ NAME_LANGUAGE_NTSC_ENG,
+} FilenameLanguage;
 
 #ifdef __cplusplus
 
 #include <map>
 #include <string>
-#include <tuple>
 #include <functional>
 #include <vector>
 #include <filesystem>
@@ -43,8 +54,6 @@ typedef struct {
 #define BS_THREAD_POOL_ENABLE_PRIORITY
 #define BS_THREAD_POOL_ENABLE_PAUSE
 #include <BS_thread_pool.hpp>
-
-#include "z64save.h"
 
 #include <nlohmann/json.hpp>
 
@@ -54,10 +63,12 @@ class SaveManager {
 
     static void WriteSaveFile(const std::filesystem::path& savePath, uintptr_t addr, void* dramAddr, size_t size);
     static void ReadSaveFile(std::filesystem::path savePath, uintptr_t addr, void* dramAddr, size_t size);
+    // Write to fileName + ".temp" and only swap once fully on disk
+    static bool WriteFileSafely(const std::filesystem::path& fileName, const std::string& contents);
 
     using InitFunc = void (*)(bool isDebug);
     using LoadFunc = void (*)();
-    using SaveFunc = void (*)(SaveContext* saveContext, int sectionID, bool fullSave);
+    using SaveFunc = void (*)(const SaveContext& saveContext, int sectionID, bool fullSave);
     using PostFunc = void (*)(int version);
 
     typedef struct {
@@ -145,29 +156,28 @@ class SaveManager {
 
   private:
     std::filesystem::path GetFileName(int fileNum);
-    std::filesystem::path GetFileTempName(int fileNum);
     nlohmann::json saveBlock;
 
     void ConvertFromUnversioned();
     void CreateDefaultGlobal();
 
-    void SaveFileThreaded(int fileNum, SaveContext* saveContext, int sectionID);
+    void SaveFileThreaded(int fileNum, const SaveContext& saveContext, int sectionID);
 
     void InitMeta(int slotNum);
+    void StartupCheckAndInitMeta(int slotNum);
     static void InitFileImpl(bool isDebug);
     static void InitFileNormal();
     static void InitFileDebug();
     static void InitFileMaxed();
 
-    static void LoadRandomizerVersion1();
-    static void LoadRandomizerVersion2();
-    static void SaveRandomizer(SaveContext* saveContext, int sectionID, bool fullSave);
+    static void LoadRandomizer();
+    static void SaveRandomizer(const SaveContext& saveContext, int sectionID, bool fullSave);
 
     static void LoadBaseVersion1();
     static void LoadBaseVersion2();
     static void LoadBaseVersion3();
     static void LoadBaseVersion4();
-    static void SaveBase(SaveContext* saveContext, int sectionID, bool fullSave);
+    static void SaveBase(const SaveContext& saveContext, int sectionID, bool fullSave);
 
     std::vector<InitFunc> initFuncs;
 
@@ -184,25 +194,17 @@ class SaveManager {
     nlohmann::json* currentJsonContext = nullptr;
     nlohmann::json::iterator currentJsonArrayContext;
     std::shared_ptr<BS::thread_pool> smThreadPool;
+    std::mutex saveMtx;
 };
 
 #else
-
-// TODO feature parity to the C++ interface. We need Save_AddInitFunction and Save_AddPostFunction at least
-
-typedef void (*Save_LoadFunc)(void);
-typedef void (*Save_SaveFunc)(const SaveContext* saveContext, int sectionID);
 
 void Save_Init(void);
 void Save_InitFile(int isDebug);
 void Save_SaveFile(void);
 void Save_SaveSection(int sectionID);
 void Save_SaveGlobal(void);
-void Save_LoadGlobal(void);
-void Save_AddLoadFunction(char* name, int version, Save_LoadFunc func);
-void Save_AddSaveFunction(char* name, int version, Save_SaveFunc func, bool saveWithBase, int parentSection);
 SaveFileMetaInfo* Save_GetSaveMetaInfo(int fileNum);
 void Save_CopyFile(int from, int to);
 void Save_DeleteFile(int fileNum);
-bool Save_Exist(int fileNum);
 #endif

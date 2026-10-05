@@ -9,7 +9,7 @@
 #include "soh/frame_interpolation.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_WHILE_CULLED)
+#define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
 void EnBa_Init(Actor* thisx, PlayState* play);
 void EnBa_Destroy(Actor* thisx, PlayState* play);
@@ -150,7 +150,7 @@ void EnBa_Idle(EnBa* this, PlayState* play) {
     if ((this->actor.colChkInfo.mass == MASS_IMMOVABLE) && (this->actor.xzDistToPlayer > 175.0f)) {
         Math_SmoothStepToF(&this->actor.world.pos.y, this->actor.home.pos.y + 330.0f, 1.0f, 7.0f, 0.0f);
     } else {
-        this->actor.flags |= ACTOR_FLAG_TARGETABLE;
+        this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
         Math_SmoothStepToF(&this->actor.world.pos.y, this->actor.home.pos.y + 100.0f, 1.0f, 10.0f, 0.0f);
     }
     this->unk_2FC = this->actor.world.pos;
@@ -207,7 +207,7 @@ void EnBa_SetupFallAsBlob(EnBa* this) {
  * Action function of the pink fleshy blobs that spawn and fall to the floor when a tentacle dies
  */
 void EnBa_FallAsBlob(EnBa* this, PlayState* play) {
-    if (this->actor.bgCheckFlags & 1) {
+    if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) {
         this->actor.scale.y -= 0.001f;
         this->actor.scale.x += 0.0005f;
         this->actor.scale.z += 0.0005f;
@@ -216,7 +216,7 @@ void EnBa_FallAsBlob(EnBa* this, PlayState* play) {
             Actor_Kill(&this->actor);
         }
     } else {
-        Actor_MoveForward(&this->actor);
+        Actor_MoveXZGravity(&this->actor);
         Actor_UpdateBgCheckInfo(play, &this->actor, 30.0f, 28.0f, 80.0f, 5);
     }
 }
@@ -307,7 +307,7 @@ void EnBa_SwingAtPlayer(EnBa* this, PlayState* play) {
         if (this->collider.base.atFlags & 2) {
             this->collider.base.atFlags &= ~2;
             if (this->collider.base.at == &player->actor) {
-                func_8002F71C(play, &this->actor, 8.0f, this->actor.yawTowardsPlayer, 8.0f);
+                Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 8.0f, this->actor.yawTowardsPlayer, 8.0f);
             }
         }
         CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
@@ -390,8 +390,8 @@ void func_809B75A0(EnBa* this, PlayState* play2) {
     this->unk_14C = 0;
 
     for (i = 7; i < 14; i++) {
-        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BA, this->unk_158[i].x, this->unk_158[i].y,
-                    this->unk_158[i].z, 0, 0, 0, EN_BA_DEAD_BLOB, true);
+        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BA, this->unk_158[i].x, this->unk_158[i].y, this->unk_158[i].z, 0,
+                    0, 0, EN_BA_DEAD_BLOB);
     }
     unk_temp = Math_Vec3f_Pitch(&this->actor.world.pos, &this->unk_158[0]) + 0x8000;
     Math_SmoothStepToS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 1, this->unk_31C, 0);
@@ -399,7 +399,7 @@ void func_809B75A0(EnBa* this, PlayState* play2) {
     Matrix_Translate(this->actor.world.pos.x, this->actor.world.pos.y, this->actor.world.pos.z, MTXMODE_NEW);
     Matrix_RotateZYX(this->actor.shape.rot.x - 0x8000, this->actor.shape.rot.y, 0, MTXMODE_APPLY);
     Matrix_MultVec3f(&D_809B8080, &this->unk_158[0]);
-    this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+    this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
     for (i = 5; i < 13; i++) {
         Math_SmoothStepToS(&this->unk_2A8[i].x, this->unk_2A8[5].x, 1, this->unk_31C, 0);
         Math_SmoothStepToS(&this->unk_2A8[i].y, this->unk_2A8[5].y, 1, this->unk_31C, 0);
@@ -490,8 +490,8 @@ void EnBa_Draw(Actor* thisx, PlayState* play) {
         gSPSegment(POLY_OPA_DISP++, 0x0C, mtx);
         gSPSegment(POLY_OPA_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(D_809B8118[this->actor.params]));
         gSPSegment(POLY_OPA_DISP++, 0x09,
-                   Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 16, 16, 1, 0,
-                                    (play->gameplayFrames * -10) % 128, 32, 32));
+                   Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, 0, 0, 16, 16, 1, 0, (play->gameplayFrames * -10) % 128, 32,
+                                      32, 0, 0, 0, -10));
         for (i = 0; i < 14; i++, mtx++) {
             FrameInterpolation_RecordOpenChild(this, this->epoch + i * 25);
 
@@ -514,18 +514,15 @@ void EnBa_Draw(Actor* thisx, PlayState* play) {
             FrameInterpolation_RecordCloseChild();
         }
         Matrix_Pop();
-        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                  G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_OPA_DISP++, object_bxa_DL_000890);
     } else {
         gSPSegment(POLY_OPA_DISP++, 0x08,
-                   Gfx_TwoTexScroll(play->state.gfxCtx, 0, (play->gameplayFrames * 2) % 128,
-                                    (play->gameplayFrames * 2) % 128, 32, 32, 1,
-                                    (play->gameplayFrames * -5) % 128, (play->gameplayFrames * -5) % 128, 32,
-                                    32));
+                   Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, (play->gameplayFrames * 2) % 128,
+                                      (play->gameplayFrames * 2) % 128, 32, 32, 1, (play->gameplayFrames * -5) % 128,
+                                      (play->gameplayFrames * -5) % 128, 32, 32, 2, 2, -5, -5));
         gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 125, 100, 255);
-        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                  G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_OPA_DISP++, object_bxa_DL_001D80);
     }
     CLOSE_DISPS(play->state.gfxCtx);

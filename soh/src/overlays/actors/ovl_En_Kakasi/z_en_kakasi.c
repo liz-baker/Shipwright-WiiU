@@ -8,7 +8,7 @@
 #include "vt.h"
 #include "objects/object_ka/object_ka.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_NO_FREEZE_OCARINA)
+#define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_DURING_OCARINA)
 
 void EnKakasi_Init(Actor* thisx, PlayState* play);
 void EnKakasi_Destroy(Actor* thisx, PlayState* play);
@@ -74,7 +74,7 @@ void EnKakasi_Init(Actor* thisx, PlayState* play) {
     SkelAnime_InitFlex(play, &this->skelanime, &object_ka_Skel_0065B0, &object_ka_Anim_000214, NULL, NULL, 0);
 
     this->rot = this->actor.world.rot;
-    this->actor.flags |= ACTOR_FLAG_DRAGGED_BY_HOOKSHOT;
+    this->actor.flags |= ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER;
     this->actor.colChkInfo.mass = MASS_IMMOVABLE;
 
     Actor_SetScale(&this->actor, 0.01f);
@@ -106,30 +106,30 @@ void func_80A8F320(EnKakasi* this, PlayState* play, s16 arg) {
         ocarinaNote = this->unk_1A6;
     }
     switch (ocarinaNote) {
-        case OCARINA_NOTE_D4:
+        case OCARINA_BTN_A:
             this->unk_19A++;
             if (this->unk_1A4 == 0) {
                 this->unk_1A4 = 1;
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_KAKASHI_ROLL);
             }
             break;
-        case OCARINA_NOTE_F4:
+        case OCARINA_BTN_C_DOWN:
             this->unk_19A++;
             this->unk_1B8 = 1.0f;
             break;
-        case OCARINA_NOTE_A4:
+        case OCARINA_BTN_C_RIGHT:
             this->unk_19A++;
             if (this->unk_1AC == 0) {
                 this->unk_1AC = 0x1388;
             }
             break;
-        case OCARINA_NOTE_B4:
+        case OCARINA_BTN_C_LEFT:
             this->unk_19A++;
             if (this->unk_1A8 == 0) {
                 this->unk_1A8 = 0x1388;
             }
             break;
-        case OCARINA_NOTE_D5:
+        case OCARINA_BTN_C_UP:
             this->unk_19A++;
             this->unk_1B8 = 2.0f;
             break;
@@ -141,7 +141,7 @@ void func_80A8F320(EnKakasi* this, PlayState* play, s16 arg) {
 
     if (this->unk_19A != 0) {
         this->actor.gravity = -1.0f;
-        if (this->unk_19A == 8 && (this->actor.bgCheckFlags & 1)) {
+        if (this->unk_19A == 8 && (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
             this->actor.velocity.y = 3.0f;
             Audio_PlayActorSound2(&this->actor, NA_SE_IT_KAKASHI_JUMP);
         }
@@ -214,7 +214,7 @@ void func_80A8F75C(EnKakasi* this, PlayState* play) {
             if (absyawTowardsPlayer < 0x4300) {
                 if (!this->unk_194) {
                     if (player->stateFlags2 & PLAYER_STATE2_ATTEMPT_PLAY_FOR_ACTOR) {
-                        this->camId = OnePointCutscene_Init(play, 2260, -99, &this->actor, MAIN_CAM);
+                        this->camId = OnePointCutscene_Init(play, 2260, -99, &this->actor, CAM_ID_MAIN);
 
                         func_8010BD58(play, OCARINA_ACTION_SCARECROW_LONG_RECORDING);
                         this->unk_19A = 0;
@@ -227,7 +227,7 @@ void func_80A8F75C(EnKakasi* this, PlayState* play) {
                         player->stateFlags2 |= PLAYER_STATE2_NEAR_OCARINA_ACTOR;
                     }
                 }
-                func_8002F2CC(&this->actor, play, 100.0f);
+                Actor_OfferTalk(&this->actor, play, 100.0f);
             }
         }
     }
@@ -260,16 +260,16 @@ void func_80A8F8D0(EnKakasi* this, PlayState* play) {
 void func_80A8F9C8(EnKakasi* this, PlayState* play) {
     func_80A8F28C(this);
     SkelAnime_Update(&this->skelanime);
-    func_8002DF54(play, NULL, 8);
+    Player_SetCsActionWithHaltedActors(play, NULL, 8);
 
     if (this->unk_196 == Message_GetState(&play->msgCtx) && Message_ShouldAdvance(play)) {
 
         if (this->camId != SUBCAM_NONE) {
             func_8005B1A4(play->cameraPtrs[this->camId]);
         }
-        this->camId = OnePointCutscene_Init(play, 2270, -99, &this->actor, MAIN_CAM);
+        this->camId = OnePointCutscene_Init(play, 2270, -99, &this->actor, CAM_ID_MAIN);
         play->msgCtx.msgMode = MSGMODE_PAUSED;
-        func_8002DF54(play, NULL, 8);
+        Player_SetCsActionWithHaltedActors(play, NULL, 8);
         func_8010BD58(play, OCARINA_ACTION_SCARECROW_LONG_PLAYBACK);
         this->actionFunc = func_80A8FAA4;
     }
@@ -296,7 +296,7 @@ void func_80A8FAA4(EnKakasi* this, PlayState* play) {
         this->actionFunc = func_80A8FBB8;
         OnePointCutscene_EndCutscene(play, this->camId);
         this->camId = SUBCAM_NONE;
-        this->camId = OnePointCutscene_Init(play, 2260, -99, &this->actor, MAIN_CAM);
+        this->camId = OnePointCutscene_Init(play, 2260, -99, &this->actor, CAM_ID_MAIN);
         func_8005B1A4(play->cameraPtrs[this->camId]);
     }
 }
@@ -308,7 +308,7 @@ void func_80A8FBB8(EnKakasi* this, PlayState* play) {
     if (this->unk_196 == Message_GetState(&play->msgCtx) && Message_ShouldAdvance(play)) {
         func_8005B1A4(play->cameraPtrs[this->camId]);
         Message_CloseTextbox(play);
-        func_8002DF54(play, NULL, 7);
+        Player_SetCsActionWithHaltedActors(play, NULL, 7);
         this->actionFunc = func_80A8F660;
     }
 }
@@ -329,7 +329,7 @@ void EnKakasi_Update(Actor* thisx, PlayState* play) {
     this->height = 60.0f;
     Actor_SetFocus(&this->actor, this->height);
     this->actionFunc(this, play);
-    Actor_MoveForward(&this->actor);
+    Actor_MoveXZGravity(&this->actor);
     Actor_UpdateBgCheckInfo(play, &this->actor, 50.0f, 50.0f, 100.0f, 28);
     Collider_UpdateCylinder(&this->actor, &this->collider);
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);

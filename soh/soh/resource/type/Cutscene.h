@@ -1,8 +1,7 @@
 #pragma once
 
 #include <vector>
-#include <string>
-#include "Resource.h"
+#include <ship/resource/Resource.h>
 
 namespace SOH {
 
@@ -45,7 +44,8 @@ class Cutscene : public Ship::Resource<uint32_t> {
   public:
     using Resource::Resource;
 
-    Cutscene() : Resource(std::shared_ptr<Ship::ResourceInitData>()) {}
+    Cutscene() : Resource(std::shared_ptr<Ship::ResourceInitData>()) {
+    }
 
     uint32_t* GetPointer();
     size_t GetPointerSize();
@@ -55,7 +55,6 @@ class Cutscene : public Ship::Resource<uint32_t> {
     std::vector<uint32_t> commands;
 };
 } // namespace SOH
-
 
 /////////////
 

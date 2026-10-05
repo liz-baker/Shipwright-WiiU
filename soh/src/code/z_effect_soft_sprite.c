@@ -14,11 +14,11 @@ void EffectSs_InitInfo(PlayState* play, s32 tableSize) {
     for (i = 0; i < ARRAY_COUNT(gEffectSsOverlayTable); i++) {
         overlay = &gEffectSsOverlayTable[i];
         osSyncPrintf("effect index %3d:size=%6dbyte romsize=%6dbyte\n", i,
-                     (uintptr_t)overlay->vramEnd - (uintptr_t)overlay->vramStart, overlay->vromEnd - overlay->vromStart);
+                     (uintptr_t)overlay->vramEnd - (uintptr_t)overlay->vramStart,
+                     overlay->vromEnd - overlay->vromStart);
     }
 
-    sEffectSsInfo.table =
-        GAMESTATE_ALLOC_MC(&play->state, tableSize * sizeof(EffectSs));
+    sEffectSsInfo.table = GAMESTATE_ALLOC_MC(&play->state, tableSize * sizeof(EffectSs));
     assert(sEffectSsInfo.table != NULL);
 
     sEffectSsInfo.searchStartIndex = 0;
@@ -216,10 +216,11 @@ void EffectSs_Spawn(PlayState* play, s32 type, s32 priority, void* initParams) {
             osSyncPrintf(VT_RST);
         }
 
-        initInfo = (void*)(uintptr_t)((overlayEntry->initInfo != NULL)
-                                    ? (void*)((uintptr_t)overlayEntry->initInfo -
-                                              ((intptr_t)overlayEntry->vramStart - (intptr_t)overlayEntry->loadedRamAddr))
-                                    : NULL);
+        initInfo =
+            (void*)(uintptr_t)((overlayEntry->initInfo != NULL) ? (void*)((uintptr_t)overlayEntry->initInfo -
+                                                                          ((intptr_t)overlayEntry->vramStart -
+                                                                           (intptr_t)overlayEntry->loadedRamAddr))
+                                                                : NULL);
     }
 
     if (initInfo->init == NULL) {
@@ -329,16 +330,25 @@ void EffectSs_DrawAll(PlayState* play) {
     }
 }
 
-s16 func_80027DD4(s16 arg0, s16 arg1, s32 arg2) {
-    s16 ret = (arg2 == 0) ? arg1 : (arg0 + (s32)((arg1 - arg0) / (f32)arg2));
+/**
+ * Lerp from `a` (weightInv == inf) to `b` (weightInv == 1 or 0).
+ */
+s16 EffectSs_LerpInv(s16 a, s16 b, s32 weightInv) {
+    s16 ret = (weightInv == 0) ? b : (a + (s32)((b - a) / (f32)weightInv));
 
     return ret;
 }
 
-s16 func_80027E34(s16 arg0, s16 arg1, f32 arg2) {
-    return (arg1 - arg0) * arg2 + arg0;
+/**
+ * Lerp from `a` (weight == 0) to `b` (weight == 1).
+ */
+s16 EffectSs_LerpS16(s16 a, s16 b, f32 weight) {
+    return (b - a) * weight + a;
 }
 
-u8 func_80027E84(u8 arg0, u8 arg1, f32 arg2) {
-    return arg2 * ((f32)arg1 - (f32)arg0) + arg0;
+/**
+ * Lerp from `a` (weight == 0) to `b` (weight == 1).
+ */
+u8 EffectSs_LerpU8(u8 a, u8 b, f32 weight) {
+    return weight * ((f32)b - (f32)a) + a;
 }

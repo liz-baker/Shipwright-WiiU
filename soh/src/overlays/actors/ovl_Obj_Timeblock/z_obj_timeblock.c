@@ -6,8 +6,12 @@
 
 #include "z_obj_timeblock.h"
 #include "objects/object_timeblock/object_timeblock.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include <libultraship/bridge/consolevariablebridge.h>
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_UPDATE_WHILE_CULLED | ACTOR_FLAG_NO_FREEZE_OCARINA | ACTOR_FLAG_NO_LOCKON)
+#define FLAGS                                                                                               \
+    (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA | \
+     ACTOR_FLAG_LOCK_ON_DISABLED)
 
 void ObjTimeblock_Init(Actor* thisx, PlayState* play);
 void ObjTimeblock_Destroy(Actor* thisx, PlayState* play);
@@ -84,9 +88,9 @@ u32 ObjTimeblock_CalculateIsVisible(ObjTimeblock* this) {
 }
 
 void ObjTimeblock_SpawnDemoEffect(ObjTimeblock* this, PlayState* play) {
-    Actor_Spawn(&play->actorCtx, play, ACTOR_DEMO_EFFECT, this->dyna.actor.world.pos.x,
-                this->dyna.actor.world.pos.y, this->dyna.actor.world.pos.z, 0, 0, 0,
-                sSizeOptions[(this->dyna.actor.params >> 8) & 1].demoEffectParams, true);
+    Actor_Spawn(&play->actorCtx, play, ACTOR_DEMO_EFFECT, this->dyna.actor.world.pos.x, this->dyna.actor.world.pos.y,
+                this->dyna.actor.world.pos.z, 0, 0, 0,
+                sSizeOptions[(this->dyna.actor.params >> 8) & 1].demoEffectParams);
 }
 
 void ObjTimeblock_ToggleSwitchFlag(PlayState* play, s32 flag) {
@@ -148,7 +152,7 @@ void ObjTimeblock_Destroy(Actor* thisx, PlayState* play) {
 }
 
 u8 ObjTimeblock_PlayerIsInRange(ObjTimeblock* this, PlayState* play) {
-    if (this->isVisible && func_80043590(&this->dyna)) {
+    if (this->isVisible && DynaPolyActor_IsPlayerAbove(&this->dyna)) {
         return false;
     }
 
@@ -156,7 +160,7 @@ u8 ObjTimeblock_PlayerIsInRange(ObjTimeblock* this, PlayState* play) {
         Vec3f distance;
         f32 blockSize;
 
-        func_8002DBD0(&this->dyna.actor, &distance, &GET_PLAYER(play)->actor.world.pos);
+        Actor_WorldToActorCoords(&this->dyna.actor, &distance, &GET_PLAYER(play)->actor.world.pos);
         blockSize = this->dyna.actor.scale.x * 50.0f + 6.0f;
         // Return true if player's xz position is not inside the block
         if (blockSize < fabsf(distance.x) || blockSize < fabsf(distance.z)) {
@@ -216,8 +220,11 @@ void ObjTimeblock_Normal(ObjTimeblock* this, PlayState* play) {
         ObjTimeblock_SpawnDemoEffect(this, play);
         this->demoEffectTimer = 160;
 
-        // Possibly points the camera to this actor
-        OnePointCutscene_Attention(play, &this->dyna.actor);
+        if (GameInteractor_Should(VB_PLAY_TIMEBLOCK_CS, true, this)) {
+            // Possibly points the camera to this actor
+            OnePointCutscene_Attention(play, &this->dyna.actor);
+        }
+
         // "◯◯◯◯ Time Block Attention Camera (frame counter  %d)\n"
         osSyncPrintf("◯◯◯◯ Time Block 注目カメラ (frame counter  %d)\n", play->state.frames);
 
@@ -249,7 +256,7 @@ void ObjTimeblock_Normal(ObjTimeblock* this, PlayState* play) {
     this->isVisible = newIsVisible;
 
     if (this->demoEffectTimer == 50) {
-        func_80078884(NA_SE_SY_TRE_BOX_APPEAR);
+        Sfx_PlaySfxCentered(NA_SE_SY_TRE_BOX_APPEAR);
     }
 }
 
@@ -275,7 +282,11 @@ void ObjTimeblock_AltBehaviorVisible(ObjTimeblock* this, PlayState* play) {
         this->demoEffectFirstPartTimer = 12;
         ObjTimeblock_SpawnDemoEffect(this, play);
         this->demoEffectTimer = 160;
-        OnePointCutscene_Attention(play, &this->dyna.actor);
+
+        if (GameInteractor_Should(VB_PLAY_TIMEBLOCK_CS, true, this)) {
+            OnePointCutscene_Attention(play, &this->dyna.actor);
+        }
+
         // "Time Block Attention Camera (frame counter)"
         osSyncPrintf("◯◯◯◯ Time Block 注目カメラ (frame counter  %d)\n", play->state.frames);
         ObjTimeblock_ToggleSwitchFlag(play, this->dyna.actor.params & 0x3F);
@@ -284,7 +295,7 @@ void ObjTimeblock_AltBehaviorVisible(ObjTimeblock* this, PlayState* play) {
     func_80BA06AC(this, play);
 
     if (this->demoEffectTimer == 50) {
-        func_80078884(NA_SE_SY_TRE_BOX_APPEAR);
+        Sfx_PlaySfxCentered(NA_SE_SY_TRE_BOX_APPEAR);
     }
 
     if (!this->isVisible && this->demoEffectTimer <= 0) {
@@ -338,8 +349,7 @@ void ObjTimeblock_Draw(Actor* thisx, PlayState* play) {
         OPEN_DISPS(play->state.gfxCtx);
 
         Gfx_SetupDL_25Opa(play->state.gfxCtx);
-        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                  G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         if (CVarGetInteger(CVAR_COSMETIC("World.BlockOfTime.Changed"), 0)) {
             Color_RGB8 color = CVarGetColor24(CVAR_COSMETIC("World.BlockOfTime.Value"), *primColor);
             gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, color.r, color.g, color.b, 255);

@@ -1,11 +1,15 @@
 #ifndef Z64_AUDIO_H
 #define Z64_AUDIO_H
 
-#include <endianness.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define MK_CMD(b0,b1,b2,b3) ((((b0) & 0xFF) << 0x18) | (((b1) & 0xFF) << 0x10) | (((b2) & 0xFF) << 0x8) | (((b3) & 0xFF) << 0))
 
 #define NO_LAYER ((SequenceLayer*)(-1))
+
+#define FONT_ID_NONE 0xFFFF
 
 #define TATUMS_PER_BEAT 48
 
@@ -24,8 +28,8 @@
 
 //#define MAX_SEQUENCES 0x800
 extern size_t sequenceMapSize;
-
-extern char* fontMap[256];
+extern size_t fontMapSize;
+extern char** fontMap;
 
 #define MAX_AUTHENTIC_SEQID 110
 
@@ -54,7 +58,8 @@ typedef enum {
     /* 2 */ CODEC_S16_INMEMORY,
     /* 3 */ CODEC_SMALL_ADPCM,
     /* 4 */ CODEC_REVERB,
-    /* 5 */ CODEC_S16
+    /* 5 */ CODEC_S16,
+    /* 6 */ CODEC_OPUS,
 } SampleCodec;
 
 typedef enum {
@@ -117,13 +122,14 @@ typedef struct {
     /* 0x2 */ s16 arg;
 } AdsrEnvelope; // size = 0x4
 
-typedef struct {
-    /* 0x00 */ uintptr_t start;
-    /* 0x04 */ uintptr_t end;
-    /* 0x08 */ u32 count;
-    /* 0x0C */ char unk_0C[0x4];
-    /* 0x10 */ s16 state[16]; // only exists if count != 0. 8-byte aligned
-} AdpcmLoop; // size = 0x30 (or 0x10)
+typedef struct AdpcmLoop {
+    /* 0x00 */ u32 start;
+    /* 0x04 */ u32 loopEnd;   // numSamples position into the sample where the loop ends
+    /* 0x08 */ u32 count;     // The number of times the loop is played before the sound completes. Setting count to -1
+    // indicates that the loop should play indefinitely.
+    /* 0x0C */ u32 sampleEnd; // total number of s16-samples in the sample audio clip
+    /* 0x10 */ s16 predictorState[16]; // only exists if count != 0. 8-byte aligned
+} AdpcmLoop;    // size = 0x30 (or 0x10)
 
 typedef struct {
     /* 0x00 */ s32 order;
@@ -131,24 +137,23 @@ typedef struct {
     /* 0x08 */ s16* book; // size 8 * order * npredictors. 8-byte aligned
 } AdpcmBook; // size >= 0x8
 
-typedef struct 
-{
+typedef struct SoundFontSample {
     union {
         struct {
-            /* 0x00 */ u32 codec : 4;
-            /* 0x00 */ u32 medium : 2;
-            /* 0x00 */ u32 unk_bit26 : 1;
-            /* 0x00 */ u32 unk_bit25 : 1; // this has been named isRelocated in zret
-            /* 0x01 */ u32 size : 24;
+            ///* 0x0 */ u32 unk_0 : 1;
+            /* 0x0 */ u32 codec : 4; // The state of compression or decompression, See `SampleCodec`
+            /* 0x0 */ u32 medium : 2; // Medium where sample is currently stored. See `SampleMedium`
+            /* 0x0 */ u32 unk_bit26 : 1;
+            /* 0x0 */ u32 isRelocated : 1; // Has the sample header been relocated (offsets to pointers)
+
         };
         u32 asU32;
     };
-
-    /* 0x04 */ u8* sampleAddr;
-    /* 0x08 */ AdpcmLoop* loop;
-    /* 0x0C */ AdpcmBook* book;
-    u32 sampleRateMagicValue; // For wav samples only...
-    s32 sampleRate;           // For wav samples only...
+    /* 0x1 */ u32 size;  // Size of the sample
+    u32 fileSize;
+    /* 0x4 */ u8* sampleAddr; // Raw sample data. Offset from the start of the sample bank or absolute address to either rom or ram
+    /* 0x8 */ AdpcmLoop* loop; // Adpcm loop parameters used by the sample. Offset from the start of the sound font / pointer to ram
+    /* 0xC */ AdpcmBook* book; // Adpcm book parameters used by the sample. Offset from the start of the sound font / pointer to ram
 } SoundFontSample; // size = 0x10
 
 typedef struct {
@@ -265,7 +270,7 @@ typedef struct {
     /* 0x002 */ u8 noteAllocPolicy;
     /* 0x003 */ u8 muteBehavior;
     /* 0x004 */ u16 seqId;
-    /* 0x005 */ u8 defaultFont;
+    /* 0x005 */ u16 defaultFont;
     /* 0x006 */ u8 unk_06[1];
     /* 0x007 */ s8 playerIdx;
     /* 0x008 */ u16 tempo; // tatums per minute
@@ -373,7 +378,7 @@ typedef struct SequenceChannel {
     /* 0x04 */ u8 reverb;       // or dry/wet mix
     /* 0x05 */ u8 notePriority; // 0-3
     /* 0x06 */ u8 someOtherPriority;
-    /* 0x07 */ u8 fontId;
+    /* 0x07 */ u16 fontId;
     /* 0x08 */ u8 reverbIndex;
     /* 0x09 */ u8 bookOffset;
     /* 0x0A */ u8 newPan;
@@ -465,6 +470,8 @@ typedef struct {
     /* 0x00F0 */ s16 dummyResampleState[0x10];
 } NoteSynthesisBuffers; // size = 0x110
 
+struct OpusDecState;
+
 typedef struct {
     /* 0x00 */ u8 restart;
     /* 0x01 */ u8 sampleDmaIndex;
@@ -483,6 +490,7 @@ typedef struct {
     /* 0x1A */ u8 unk_1A;
     /* 0x1C */ u16 unk_1C;
     /* 0x1E */ u16 unk_1E;
+    struct OpusDecState* opusFile; // Only for streamed opus audio
 } NoteSynthesisState; // size = 0x20
 
 typedef struct {
@@ -501,7 +509,7 @@ typedef struct {
     /* 0x00 */ u8 priority;
     /* 0x01 */ u8 waveId;
     /* 0x02 */ u8 sampleCountIndex;
-    /* 0x03 */ u8 fontId;
+    /* 0x03 */ u16 fontId;
     /* 0x04 */ u8 unk_04;
     /* 0x05 */ u8 stereoHeadsetEffects;
     /* 0x06 */ s16 adsrVolScaleUnused;
@@ -909,7 +917,8 @@ typedef struct {
     /* 0x2B30 */ AudioCache fontCache;
     /* 0x2C40 */ AudioCache sampleBankCache;
     /* 0x2D50 */ AudioAllocPool permanentPool;
-    /* 0x2D60 */ AudioCacheEntry permanentCache[32];
+    // SOH [Bugfix] 32 -> 512: large custom-music packs overflowed this (see AudioHeap_AllocPermanent).
+    /* 0x2D60 */ AudioCacheEntry permanentCache[512];
     /* 0x2EE0 */ AudioSampleCache persistentSampleCache;
     /* 0x3174 */ AudioSampleCache temporarySampleCache;
     /* 0x3408 */ AudioPoolSplit4 sessionPoolSplit;
@@ -917,7 +926,7 @@ typedef struct {
     /* 0x3420 */ AudioPoolSplit3 persistentCommonPoolSplit;
     /* 0x342C */ AudioPoolSplit3 temporaryCommonPoolSplit;
     /* 0x3438 */ u8 sampleFontLoadStatus[0x30];
-    /* 0x3468 */ u8 fontLoadStatus[0x30];
+    /* 0x3468 */ u8* fontLoadStatus;
     /* 0x3498 */ u8* seqLoadStatus;
     /* 0x3518 */ volatile u8 resetStatus;
     /* 0x3519 */ u8 audioResetSpecIdToLoad;
@@ -1079,35 +1088,88 @@ typedef struct {
     u16 params;
 } SoundParams;
 
-typedef struct {
-    /* 0x0000 */ u8 noteIdx;
-    /* 0x0001 */ u8 unk_01;
-    /* 0x0002 */ u16 unk_02;
-    /* 0x0004 */ u8 volume;
-    /* 0x0005 */ u8 vibrato;
-    /* 0x0006 */ s8 tone;
-    /* 0x0007 */ u8 semitone;
+/**
+ * semitone Note:
+ * Flag for resolving whether (pitch = OCARINA_PITCH_BFLAT4)
+ * gets mapped to either C_RIGHT and C_LEFT
+ *
+ * This is required as C_RIGHT and C_LEFT are the only notes
+ * that map to two semitones apart (OCARINA_PITCH_A4 and OCARINA_PITCH_B4)
+ *      0x40 - BTN_Z is pressed to lower note by a semitone
+ *      0x80 - BTN_R is pressed to raise note by a semitone
+ */
+
+typedef struct OcarinaNote {
+    /* 0x0 */ u8 pitch; // number of semitones above middle C
+    /* 0x2 */ u16 length; // number of frames the note is sustained
+    /* 0x4 */ u8 volume;
+    /* 0x5 */ u8 vibrato;
+    /* 0x6 */ s8 bend; // frequency multiplicative offset from the pitch
+    /* 0x7 */ u8 bFlat4Flag; // See note above
 } OcarinaNote;  // size = 0x8
 
-typedef struct {
-    u8 len;
-    u8 notesIdx[8];
-} OcarinaSongInfo;
+typedef struct OcarinaSongButtons {
+    /* 0x0 */ u8 numButtons;
+    /* 0x1 */ u8 buttonsIndex[8];
+} OcarinaSongButtons; // size = 0x9
 
-typedef struct {
-    u8 noteIdx;
-    u8 state;   // original name: "status"
-    u8 pos;     // original name: "locate"
-} OcarinaStaff;
+typedef struct OcarinaStaff {
+    /* 0x0 */ u8 buttonIndex;
+    /* 0x1 */ u8 state;   // multi-use. Playing: used as songIndex. Playback: used as repeat count of song. Recording: used as OcarinaRecordingState. "status"
+    /* 0x2 */ u8 pos;     // "locate"
+} OcarinaStaff; // size = 0x3
 
-typedef enum {
-    /*  0 */ OCARINA_NOTE_D4,
-    /*  1 */ OCARINA_NOTE_F4,
-    /*  2 */ OCARINA_NOTE_A4,
-    /*  3 */ OCARINA_NOTE_B4,
-    /*  4 */ OCARINA_NOTE_D5,
-    /* -1 */ OCARINA_NOTE_INVALID = 0xFF
-} OcarinaNoteIdx;
+typedef enum OcarinaButtonIndex {
+    /* 0 */ OCARINA_BTN_A,
+    /* 1 */ OCARINA_BTN_C_DOWN,
+    /* 2 */ OCARINA_BTN_C_RIGHT,
+    /* 3 */ OCARINA_BTN_C_LEFT,
+    /* 4 */ OCARINA_BTN_C_UP,
+    /* 5 */ OCARINA_BTN_C_RIGHT_OR_C_LEFT,  // Special case for bFlat4: Interface/Overlap between C_RIGHT and C_LEFT
+    /* 0xFF */ OCARINA_BTN_INVALID = 0xFF
+} OcarinaButtonIndex;
+
+typedef enum OcarinaInstrumentId {
+    /* 0 */ OCARINA_INSTRUMENT_OFF,
+    /* 1 */ OCARINA_INSTRUMENT_DEFAULT,
+    /* 2 */ OCARINA_INSTRUMENT_MALON,
+    /* 3 */ OCARINA_INSTRUMENT_WHISTLE,
+    /* 4 */ OCARINA_INSTRUMENT_HARP,
+    /* 5 */ OCARINA_INSTRUMENT_GRIND_ORGAN,
+    /* 6 */ OCARINA_INSTRUMENT_FLUTE,
+    /* 7 */ OCARINA_INSTRUMENT_MAX,
+    /* 7 */ OCARINA_INSTRUMENT_DEFAULT_COPY1 = OCARINA_INSTRUMENT_MAX, // Unused but present in Sequence 0 table
+    /* 8 */ OCARINA_INSTRUMENT_DEFAULT_COPY2 = OCARINA_INSTRUMENT_MAX + 1 // Unused but present in Sequence 0 table
+} OcarinaInstrumentId;
+
+typedef enum OcarinaRecordingState {
+    /*    0 */ OCARINA_RECORD_OFF,
+    /*    1 */ OCARINA_RECORD_SCARECROW_LONG,
+    /*    2 */ OCARINA_RECORD_SCARECROW_SPAWN,
+    /* 0xFF */ OCARINA_RECORD_REJECTED = 0xFF
+} OcarinaRecordingState;
+
+// Uses scientific pitch notation relative to middle C
+// https://en.wikipedia.org/wiki/Scientific_pitch_notation
+typedef enum OcarinaPitch {
+    /* 0x0 */ OCARINA_PITCH_C4,
+    /* 0x1 */ OCARINA_PITCH_DFLAT4,
+    /* 0x2 */ OCARINA_PITCH_D4,
+    /* 0x3 */ OCARINA_PITCH_EFLAT4,
+    /* 0x4 */ OCARINA_PITCH_E4,
+    /* 0x5 */ OCARINA_PITCH_F4,
+    /* 0x6 */ OCARINA_PITCH_GFLAT4,
+    /* 0x7 */ OCARINA_PITCH_G4,
+    /* 0x8 */ OCARINA_PITCH_AFLAT4,
+    /* 0x9 */ OCARINA_PITCH_A4,
+    /* 0xA */ OCARINA_PITCH_BFLAT4,
+    /* 0xB */ OCARINA_PITCH_B4,
+    /* 0xC */ OCARINA_PITCH_C5,
+    /* 0xD */ OCARINA_PITCH_DFLAT5,
+    /* 0xE */ OCARINA_PITCH_D5,
+    /* 0xF */ OCARINA_PITCH_EFLAT5,
+    /* 0xFF */ OCARINA_PITCH_NONE = 0xFF
+} OcarinaPitch;
 
 typedef struct {
     char* seqData;
@@ -1116,12 +1178,8 @@ typedef struct {
     uint8_t medium;
     uint8_t cachePolicy;
     int32_t numFonts;
-    uint8_t fonts[16];
+    uint16_t fonts[16];
 } SequenceData;
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 void Audio_SetGameVolume(int player_id, f32 volume);
 float Audio_GetGameVolume(int player_id);

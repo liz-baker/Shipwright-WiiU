@@ -10,7 +10,9 @@
 #include "soh/frame_interpolation.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_WHILE_CULLED | ACTOR_FLAG_HOOKSHOT_DRAGS)
+#define FLAGS                                                                                 \
+    (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
+     ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR)
 
 #define FLG_COREDEAD (0x4000)
 #define FLG_COREDONE (0x8000)
@@ -228,7 +230,7 @@ s32 EnFd_SpawnCore(EnFd* this, PlayState* play) {
     }
 
     if (CHECK_FLAG_ALL(this->actor.flags, ACTOR_FLAG_HOOKSHOT_ATTACHED)) {
-        func_8002DE04(play, &this->actor, this->actor.child);
+        Actor_SwapHookshotAttachment(play, &this->actor, this->actor.child);
     }
 
     this->coreActive = true;
@@ -269,8 +271,7 @@ s32 EnFd_CheckHammer(EnFd* this, PlayState* play) {
     if (this->actionFunc == EnFd_Reappear || this->actionFunc == EnFd_SpinAndGrow ||
         this->actionFunc == EnFd_JumpToGround || this->actionFunc == EnFd_WaitForCore) {
         return false;
-    } else if (play->actorCtx.unk_02 != 0 && this->actor.xzDistToPlayer < 300.0f &&
-               this->actor.yDistToPlayer < 60.0f) {
+    } else if (play->actorCtx.unk_02 != 0 && this->actor.xzDistToPlayer < 300.0f && this->actor.yDistToPlayer < 60.0f) {
         return true;
     } else {
         return false;
@@ -295,7 +296,7 @@ s32 EnFd_ColliderCheck(EnFd* this, PlayState* play) {
             return false;
         }
         this->invincibilityTimer = 30;
-        this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+        this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FLAME_DAMAGE);
         Enemy_StartFinishingBlow(play, &this->actor);
         return true;
@@ -310,7 +311,8 @@ s32 EnFd_ColliderCheck(EnFd* this, PlayState* play) {
         }
         this->attackTimer = 30;
         Audio_PlayActorSound2(&player->actor, NA_SE_PL_BODY_HIT);
-        func_8002F71C(play, &this->actor, this->actor.speedXZ + 2.0f, this->actor.yawTowardsPlayer, 6.0f);
+        Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, this->actor.speedXZ + 2.0f,
+                                              this->actor.yawTowardsPlayer, 6.0f);
     }
     return false;
 }
@@ -339,8 +341,8 @@ s32 EnFd_CanSeeActor(EnFd* this, Actor* actor, PlayState* play) {
     }
 
     // check to see if the line between `this` and `actor` does not intersect a collision poly
-    if (BgCheck_EntityLineTest1(&play->colCtx, &this->actor.world.pos, &actor->world.pos, &colPoint, &colPoly,
-                                true, false, false, true, &bgId)) {
+    if (BgCheck_EntityLineTest1(&play->colCtx, &this->actor.world.pos, &actor->world.pos, &colPoint, &colPoly, true,
+                                false, false, true, &bgId)) {
         return false;
     }
 
@@ -422,8 +424,8 @@ s32 EnFd_ShouldStopRunning(EnFd* this, PlayState* play, f32 radius, s16* runDir)
     pos.y = this->actor.world.pos.y;
     pos.z += this->actor.world.pos.z;
 
-    if (BgCheck_EntityLineTest1(&play->colCtx, &this->actor.world.pos, &pos, &colPoint, &poly, true, false, false,
-                                true, &bgId)) {
+    if (BgCheck_EntityLineTest1(&play->colCtx, &this->actor.world.pos, &pos, &colPoint, &poly, true, false, false, true,
+                                &bgId)) {
         *runDir = -*runDir;
         return true;
     }
@@ -459,8 +461,8 @@ void EnFd_Init(Actor* thisx, PlayState* play) {
     Collider_InitJntSph(play, &this->collider);
     Collider_SetJntSph(play, &this->collider, &this->actor, &sJntSphInit, this->colSphs);
     CollisionCheck_SetInfo2(&this->actor.colChkInfo, DamageTable_Get(0xF), &sColChkInit);
-    this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
-    this->actor.flags |= ACTOR_FLAG_PLAY_HIT_SFX;
+    this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
+    this->actor.flags |= ACTOR_FLAG_SFX_FOR_PLAYER_BODY_HIT;
     Actor_SetScale(&this->actor, 0.01f);
     this->firstUpdateFlag = true;
     this->actor.gravity = -1.0f;
@@ -473,8 +475,6 @@ void EnFd_Destroy(Actor* thisx, PlayState* play) {
     EnFd* this = (EnFd*)thisx;
 
     Collider_DestroyJntSph(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void EnFd_Reappear(EnFd* this, PlayState* play) {
@@ -494,7 +494,7 @@ void EnFd_SpinAndGrow(EnFd* this, PlayState* play) {
         this->actor.velocity.y = 6.0f;
         this->actor.scale.y = 0.01f;
         this->actor.world.rot.y ^= 0x8000;
-        this->actor.flags |= ACTOR_FLAG_TARGETABLE;
+        this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
         this->actor.speedXZ = 8.0f;
         Animation_ChangeByInfo(&this->skelAnime, sAnimationInfo, ENFD_ANIM_1);
         this->actionFunc = EnFd_JumpToGround;
@@ -506,7 +506,7 @@ void EnFd_SpinAndGrow(EnFd* this, PlayState* play) {
 }
 
 void EnFd_JumpToGround(EnFd* this, PlayState* play) {
-    if ((this->actor.bgCheckFlags & 1) && !(this->actor.velocity.y > 0.0f)) {
+    if ((this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) && !(this->actor.velocity.y > 0.0f)) {
         this->actor.velocity.y = 0.0f;
         this->actor.speedXZ = 0.0f;
         this->actor.world.rot.y = this->actor.shape.rot.y;
@@ -535,9 +535,9 @@ void EnFd_SpinAndSpawnFire(EnFd* this, PlayState* play) {
     f32 rotSpeed;
 
     if ((this->spinTimer < 31) && (this->invincibilityTimer == 0)) {
-        func_8002F974(&this->actor, NA_SE_EN_FLAME_FIRE_ATTACK - SFX_FLAG);
+        Actor_PlaySfx_Flagged(&this->actor, NA_SE_EN_FLAME_FIRE_ATTACK - SFX_FLAG);
     } else {
-        func_8002F974(&this->actor, NA_SE_EN_FLAME_ROLL - SFX_FLAG);
+        Actor_PlaySfx_Flagged(&this->actor, NA_SE_EN_FLAME_ROLL - SFX_FLAG);
     }
 
     if (DECR(this->spinTimer) != 0) {
@@ -626,7 +626,7 @@ void EnFd_Run(EnFd* this, PlayState* play) {
     EnFd_GetPosAdjAroundCircle(&adjPos, this, this->runRadius, this->runDir);
     Math_SmoothStepToS(&this->actor.shape.rot.y, Math_FAtan2F(adjPos.x, adjPos.z) * (0x8000 / M_PI), 4, 0xFA0, 1);
     this->actor.world.rot = this->actor.shape.rot;
-    func_8002F974(&this->actor, NA_SE_EN_FLAME_RUN - SFX_FLAG);
+    Actor_PlaySfx_Flagged(&this->actor, NA_SE_EN_FLAME_RUN - SFX_FLAG);
     if (this->skelAnime.curFrame == 6.0f || this->skelAnime.curFrame == 13.0f || this->skelAnime.curFrame == 28.0f) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FLAME_KICK);
     }
@@ -670,7 +670,7 @@ void EnFd_Update(Actor* thisx, PlayState* play) {
     if (CHECK_FLAG_ALL(this->actor.flags, ACTOR_FLAG_HOOKSHOT_ATTACHED)) {
         // has been hookshoted
         if (EnFd_SpawnCore(this, play)) {
-            this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+            this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
             this->invincibilityTimer = 30;
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_FLAME_DAMAGE);
             Enemy_StartFinishingBlow(play, &this->actor);
@@ -680,7 +680,7 @@ void EnFd_Update(Actor* thisx, PlayState* play) {
     } else if (this->actionFunc != EnFd_WaitForCore) {
         EnFd_ColliderCheck(this, play);
     }
-    Actor_MoveForward(&this->actor);
+    Actor_MoveXZGravity(&this->actor);
     Actor_UpdateBgCheckInfo(play, &this->actor, 0.0f, 0.0f, 0.0f, 4);
     EnFd_Fade(this, play);
     this->actionFunc(this, play);
@@ -784,15 +784,15 @@ void EnFd_Draw(Actor* thisx, PlayState* play) {
                         primColors[clampedHealth / 8].b, (u8)this->fadeAlpha);
         gDPSetEnvColor(POLY_XLU_DISP++, envColors[clampedHealth / 8].r, envColors[clampedHealth / 8].g,
                        envColors[clampedHealth / 8].b, (u8)this->fadeAlpha);
-        gSPSegment(
-            POLY_XLU_DISP++, 0x8,
-            Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 0x20, 0x40, 1, 0, 0xFF - (u8)(frames * 6), 8, 0x40));
+        gSPSegment(POLY_XLU_DISP++, 0x8,
+                   Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, 0, 0, 0x20, 0x40, 1, 0, 0xFF - (u8)(frames * 6), 8, 0x40,
+                                      0, 0, 0, -6));
         gDPPipeSync(POLY_XLU_DISP++);
         gSPSegment(POLY_XLU_DISP++, 0x9, D_80116280);
 
-        POLY_XLU_DISP = SkelAnime_DrawFlex(play, this->skelAnime.skeleton, this->skelAnime.jointTable,
-                                           this->skelAnime.dListCount, EnFd_OverrideLimbDraw, EnFd_PostLimbDraw, this,
-                                           POLY_XLU_DISP);
+        POLY_XLU_DISP =
+            SkelAnime_DrawFlex(play, this->skelAnime.skeleton, this->skelAnime.jointTable, this->skelAnime.dListCount,
+                               EnFd_OverrideLimbDraw, EnFd_PostLimbDraw, this, POLY_XLU_DISP);
     }
     CLOSE_DISPS(play->state.gfxCtx);
 }
@@ -905,8 +905,7 @@ void EnFd_DrawFlames(EnFd* this, PlayState* play) {
             Matrix_Translate(eff->pos.x, eff->pos.y, eff->pos.z, MTXMODE_NEW);
             Matrix_ReplaceRotation(&play->billboardMtxF);
             Matrix_Scale(eff->scale, eff->scale, 1.0f, MTXMODE_APPLY);
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                      G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
             idx = eff->timer * (8.0f / eff->initialTimer);
             gSPSegment(POLY_XLU_DISP++, 0x8, SEGMENTED_TO_VIRTUAL(dustTextures[idx]));
             gSPDisplayList(POLY_XLU_DISP++, gFlareDancerSquareParticleDL);
@@ -943,10 +942,9 @@ void EnFd_DrawDots(EnFd* this, PlayState* play) {
             Matrix_Translate(eff->pos.x, eff->pos.y, eff->pos.z, MTXMODE_NEW);
             Matrix_ReplaceRotation(&play->billboardMtxF);
             Matrix_Scale(eff->scale, eff->scale, 1.0f, MTXMODE_APPLY);
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                      G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
             gSPDisplayList(POLY_XLU_DISP++, gFlareDancerTriangleParticleDL);
-            
+
             FrameInterpolation_RecordCloseChild();
         }
     }

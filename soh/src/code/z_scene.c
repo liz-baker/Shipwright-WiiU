@@ -19,8 +19,8 @@ s32 Object_Spawn(ObjectContext* objectCtx, s16 objectId) {
     assert(((objectCtx->num < OBJECT_EXCHANGE_BANK_MAX) &&
             (((uintptr_t)objectCtx->status[objectCtx->num].segment + size) < (uintptr_t)objectCtx->spaceEnd)));
 
-    DmaMgr_SendRequest1(objectCtx->status[objectCtx->num].segment, gObjectTable[objectId].vromStart, size,
-                        __FILE__, __LINE__);
+    DmaMgr_SendRequest1(objectCtx->status[objectCtx->num].segment, gObjectTable[objectId].vromStart, size, __FILE__,
+                        __LINE__);
 
     if (objectCtx->num < OBJECT_EXCHANGE_BANK_MAX - 1) {
         objectCtx->status[objectCtx->num + 1].segment =
@@ -33,6 +33,9 @@ s32 Object_Spawn(ObjectContext* objectCtx, s16 objectId) {
     return objectCtx->num - 1;
 }
 
+// SOH [Port] Track when objects are first loaded for a scene
+static u8 sObjectFirstUpdateSkippedForScene = false;
+
 void Object_InitBank(PlayState* play, ObjectContext* objectCtx) {
     PlayState* play2 = play; // Needs to be a new variable to match (possibly a sub struct?)
     size_t spaceSize;
@@ -41,7 +44,7 @@ void Object_InitBank(PlayState* play, ObjectContext* objectCtx) {
     if (play2->sceneNum == SCENE_HYRULE_FIELD) {
         spaceSize = 1024000;
     } else if (play2->sceneNum == SCENE_GANON_BOSS) {
-        if (gSaveContext.sceneSetupIndex != 4) {
+        if (gSaveContext.sceneLayer != 4) {
             spaceSize = 1177600;
         } else {
             spaceSize = 1024000;
@@ -69,12 +72,13 @@ void Object_InitBank(PlayState* play, ObjectContext* objectCtx) {
     osSyncPrintf("オブジェクト入れ替えバンク情報 %8.3fKB\n", spaceSize / 1024.0f);
     osSyncPrintf(VT_RST);
 
-    objectCtx->spaceStart = objectCtx->status[0].segment =
-        GAMESTATE_ALLOC_MC(&play->state, spaceSize);
+    objectCtx->spaceStart = objectCtx->status[0].segment = GAMESTATE_ALLOC_MC(&play->state, spaceSize);
     objectCtx->spaceEnd = (void*)((uintptr_t)objectCtx->spaceStart + spaceSize);
 
     objectCtx->mainKeepIndex = Object_Spawn(objectCtx, OBJECT_GAMEPLAY_KEEP);
     gSegments[4] = VIRTUAL_TO_PHYSICAL(objectCtx->status[objectCtx->mainKeepIndex].segment);
+
+    sObjectFirstUpdateSkippedForScene = false;
 }
 
 void Object_UpdateBank(ObjectContext* objectCtx) {
@@ -83,6 +87,12 @@ void Object_UpdateBank(ObjectContext* objectCtx) {
     RomFile* objectFile;
     size_t size;
 
+    // SOH [Port] Skip the first object load after scene init so that actors have their init delayed by one frame
+    // This seems to mostly if not nearly resolve actors that depend on console DMA requests ending later
+    if (!sObjectFirstUpdateSkippedForScene) {
+        sObjectFirstUpdateSkippedForScene = true;
+        return;
+    }
 
     for (i = 0; i < objectCtx->num; i++) {
         if (status->id < 0) {
@@ -98,17 +108,16 @@ void Object_UpdateBank(ObjectContext* objectCtx) {
                 status->id = -status->id;
             }
             */
-           status->id = -status->id;
+            status->id = -status->id;
         }
         status++;
     }
-
 }
 
 s32 Object_GetIndex(ObjectContext* objectCtx, s16 objectId) {
     s32 i;
 
-    //return 0;
+    // return 0;
 
     for (i = 0; i < objectCtx->num; i++) {
         if (ABS(objectCtx->status[i].id) == objectId) {
@@ -190,8 +199,8 @@ s32 Scene_ExecuteCommands(PlayState* play, SceneCmd* sceneCmd) {
 }
 
 void Scene_CommandSpawnList(PlayState* play, SceneCmd* cmd) {
-    ActorEntry* linkEntry = play->linkActorEntry = (ActorEntry*)SEGMENTED_TO_VIRTUAL(cmd->spawnList.segment) +
-                                                        play->setupEntranceList[play->curSpawn].spawn;
+    ActorEntry* linkEntry = play->linkActorEntry =
+        (ActorEntry*)SEGMENTED_TO_VIRTUAL(cmd->spawnList.segment) + play->setupEntranceList[play->curSpawn].spawn;
     s16 linkObjectId;
 
     play->linkAgeOnLoad = ((void)0, gSaveContext.linkAge);
@@ -277,7 +286,7 @@ void Scene_CommandObjectList(PlayState* play, SceneCmd* cmd) {
                 status2++;
             }
             play->objectCtx.num = i;
-            func_80031A28(play, &play->actorCtx);
+            Actor_KillAllWithMissingObject(play, &play->actorCtx);
 
             continue;
         }
@@ -355,7 +364,7 @@ void Scene_CommandTimeSettings(PlayState* play, SceneCmd* cmd) {
     }
 
     if (gSaveContext.sunsSongState == SUNSSONG_INACTIVE) {
-        gTimeIncrement = play->envCtx.timeIncrement;
+        gTimeSpeed = play->envCtx.timeIncrement;
     }
 
     play->envCtx.sunPos.x = -(Math_SinS(((void)0, gSaveContext.dayTime) - 0x8000) * 120.0f) * 25.0f;
@@ -363,7 +372,7 @@ void Scene_CommandTimeSettings(PlayState* play, SceneCmd* cmd) {
     play->envCtx.sunPos.z = (Math_CosS(((void)0, gSaveContext.dayTime) - 0x8000) * 20.0f) * 25.0f;
 
     if (((play->envCtx.timeIncrement == 0) && (gSaveContext.cutsceneIndex < 0xFFF0)) ||
-        (gSaveContext.entranceIndex == ENTR_LAKE_HYLIA_8)) {
+        (gSaveContext.entranceIndex == ENTR_LAKE_HYLIA_WARP_PAD)) {
         gSaveContext.skyboxTime = ((void)0, gSaveContext.dayTime);
         if ((gSaveContext.skyboxTime >= 0x2AAC) && (gSaveContext.skyboxTime < 0x4555)) {
             gSaveContext.skyboxTime = 0x3556;
@@ -415,10 +424,10 @@ void Scene_CommandAlternateHeaderList(PlayState* play, SceneCmd* cmd) {
 
     osSyncPrintf("\n[ZU]sceneset age    =[%X]", ((void)0, gSaveContext.linkAge));
     osSyncPrintf("\n[ZU]sceneset time   =[%X]", ((void)0, gSaveContext.cutsceneIndex));
-    osSyncPrintf("\n[ZU]sceneset counter=[%X]", ((void)0, gSaveContext.sceneSetupIndex));
+    osSyncPrintf("\n[ZU]sceneset counter=[%X]", ((void)0, gSaveContext.sceneLayer));
 
-    if (gSaveContext.sceneSetupIndex != 0) {
-        altHeader = ((SceneCmd**)SEGMENTED_TO_VIRTUAL(cmd->altHeaders.segment))[gSaveContext.sceneSetupIndex - 1];
+    if (gSaveContext.sceneLayer != 0) {
+        altHeader = ((SceneCmd**)SEGMENTED_TO_VIRTUAL(cmd->altHeaders.segment))[gSaveContext.sceneLayer - 1];
 
         if (altHeader != NULL) {
             Scene_ExecuteCommands(play, SEGMENTED_TO_VIRTUAL(altHeader));
@@ -427,9 +436,8 @@ void Scene_CommandAlternateHeaderList(PlayState* play, SceneCmd* cmd) {
             // "Coughh! There is no specified dataaaaa!"
             osSyncPrintf("\nげぼはっ！ 指定されたデータがないでええっす！");
 
-            if (gSaveContext.sceneSetupIndex == 3) {
-                altHeader =
-                    ((SceneCmd**)SEGMENTED_TO_VIRTUAL(cmd->altHeaders.segment))[gSaveContext.sceneSetupIndex - 2];
+            if (gSaveContext.sceneLayer == 3) {
+                altHeader = ((SceneCmd**)SEGMENTED_TO_VIRTUAL(cmd->altHeaders.segment))[gSaveContext.sceneLayer - 2];
 
                 // "Using adult day data there!"
                 osSyncPrintf("\nそこで、大人の昼データを使用するでええっす！！");
@@ -498,11 +506,13 @@ void (*gSceneCmdHandlers[SCENE_CMD_ID_MAX])(PlayState*, SceneCmd*) = {
     Scene_CommandMiscSettings,        // SCENE_CMD_ID_MISC_SETTINGS
 };
 
+// clang-format off
 RomFile sNaviMsgFiles[] = {
     ROM_FILE(text/elf_message_field/elf_message_field),
     ROM_FILE(text/elf_message_ydan/elf_message_ydan),
     ROM_FILE_UNSET,
 };
+// clang-format on
 
 s16 gLinkObjectIds[] = { OBJECT_LINK_BOY, OBJECT_LINK_CHILD };
 
@@ -510,7 +520,7 @@ u32 gObjectTableSize = ARRAY_COUNT(gObjectTable);
 
 // Object linker symbol declarations (used in the table below)
 #define DEFINE_OBJECT(name, _1) DECLARE_ROM_SEGMENT(name)
-#define DEFINE_OBJECT_NULL(_0, _1) 
+#define DEFINE_OBJECT_NULL(_0, _1)
 #define DEFINE_OBJECT_UNSET(_0)
 
 //#include "tables/object_table.h"

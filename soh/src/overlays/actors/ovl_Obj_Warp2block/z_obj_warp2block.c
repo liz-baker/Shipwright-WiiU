@@ -6,9 +6,12 @@
 
 #include "z_obj_warp2block.h"
 #include "objects/object_timeblock/object_timeblock.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "vt.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_UPDATE_WHILE_CULLED | ACTOR_FLAG_NO_FREEZE_OCARINA | ACTOR_FLAG_NO_LOCKON)
+#define FLAGS                                                                                               \
+    (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA | \
+     ACTOR_FLAG_LOCK_ON_DISABLED)
 
 void ObjWarp2block_Init(Actor* thisx, PlayState* play);
 void ObjWarp2block_Destroy(Actor* thisx, PlayState* play);
@@ -66,13 +69,12 @@ static Color_RGB8 sColors[] = {
 };
 
 void ObjWarp2block_Spawn(ObjWarp2block* this, PlayState* play) {
-    Actor_Spawn(&play->actorCtx, play, ACTOR_DEMO_EFFECT, this->dyna.actor.world.pos.x,
-                this->dyna.actor.world.pos.y, this->dyna.actor.world.pos.z, 0, 0, 0,
-                sSpawnData[(this->dyna.actor.params >> 8) & 1].params, true);
+    Actor_Spawn(&play->actorCtx, play, ACTOR_DEMO_EFFECT, this->dyna.actor.world.pos.x, this->dyna.actor.world.pos.y,
+                this->dyna.actor.world.pos.z, 0, 0, 0, sSpawnData[(this->dyna.actor.params >> 8) & 1].params);
 
     Actor_Spawn(&play->actorCtx, play, ACTOR_DEMO_EFFECT, this->dyna.actor.child->world.pos.x,
                 this->dyna.actor.child->world.pos.y, this->dyna.actor.child->world.pos.z, 0, 0, 0,
-                sSpawnData[(this->dyna.actor.child->params >> 8) & 1].params, true);
+                sSpawnData[(this->dyna.actor.child->params >> 8) & 1].params);
 }
 
 s32 func_80BA1ECC(ObjWarp2block* this, PlayState* play) {
@@ -82,7 +84,7 @@ s32 func_80BA1ECC(ObjWarp2block* this, PlayState* play) {
     Vec3f sp20;
     f32 temp_f2;
 
-    if (func_80043590(&this->dyna)) {
+    if (DynaPolyActor_IsPlayerAbove(&this->dyna)) {
         return 0;
     }
 
@@ -91,14 +93,14 @@ s32 func_80BA1ECC(ObjWarp2block* this, PlayState* play) {
     if ((this->dyna.actor.xzDistToPlayer <= sDistances[(((this->dyna.actor.params >> 0xB) & 7))]) ||
         (temp_a3->xzDistToPlayer <= sDistances[(((temp_a3->params >> 0xB) & 7))])) {
 
-        func_8002DBD0(&this->dyna.actor, &sp20, &player->actor.world.pos);
+        Actor_WorldToActorCoords(&this->dyna.actor, &sp20, &player->actor.world.pos);
         temp_f2 = (this->dyna.actor.scale.x * 50.0f) + 6.0f;
 
         if (!(temp_f2 < fabsf(sp20.x)) && !(temp_f2 < fabsf(sp20.z))) {
             return 0;
         }
 
-        func_8002DBD0(temp_a3, &sp20, &player->actor.world.pos);
+        Actor_WorldToActorCoords(temp_a3, &sp20, &player->actor.world.pos);
         temp_f2 = (temp_a3->scale.x * 50.0f) + 6.0f;
 
         if (!(temp_f2 < fabsf(sp20.x)) && !(temp_f2 < fabsf(sp20.z))) {
@@ -279,7 +281,9 @@ void func_80BA2610(ObjWarp2block* this, PlayState* play) {
     if ((func_80BA2304(this, play) != 0) && (this->unk_16C <= 0)) {
         ObjWarp2block_Spawn(this, play);
         this->unk_16C = 0xA0;
-        OnePointCutscene_Attention(play, &this->dyna.actor);
+        if (GameInteractor_Should(VB_PLAY_TIMEBLOCK_CS, true, this)) {
+            OnePointCutscene_Attention(play, &this->dyna.actor);
+        }
         this->unk_170 = 0xC;
     }
 
@@ -290,7 +294,7 @@ void func_80BA2610(ObjWarp2block* this, PlayState* play) {
         }
     }
     if (this->unk_16C == 0x32) {
-        func_80078884(NA_SE_SY_TRE_BOX_APPEAR);
+        Sfx_PlaySfxCentered(NA_SE_SY_TRE_BOX_APPEAR);
     }
 }
 
@@ -311,8 +315,7 @@ void ObjWarp2block_Draw(Actor* thisx, PlayState* play) {
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
 
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, sp44->r, sp44->g, sp44->b, 255);
     gSPDisplayList(POLY_OPA_DISP++, gSongOfTimeBlockDL);
 

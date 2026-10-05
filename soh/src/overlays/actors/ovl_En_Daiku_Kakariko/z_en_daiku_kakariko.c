@@ -7,7 +7,7 @@
 #include "z_en_daiku_kakariko.h"
 #include "objects/object_daiku/object_daiku.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_WHILE_CULLED)
+#define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
 typedef enum {
     /* 0x0 */ CARPENTER_ICHIRO,  // Red and purple pants, normal hair
@@ -158,8 +158,7 @@ void EnDaikuKakariko_Init(Actor* thisx, PlayState* play) {
 
     ActorShape_Init(&this->actor.shape, 0.0f, ActorShadow_DrawCircle, 40.0f);
 
-    SkelAnime_InitFlex(play, &this->skelAnime, &object_daiku_Skel_007958, NULL, this->jointTable, this->morphTable,
-                       17);
+    SkelAnime_InitFlex(play, &this->skelAnime, &object_daiku_Skel_007958, NULL, this->jointTable, this->morphTable, 17);
     Collider_InitCylinder(play, &this->collider);
     Collider_SetCylinder(play, &this->collider, &this->actor, &sCylinderInit);
 
@@ -208,8 +207,6 @@ void EnDaikuKakariko_Destroy(Actor* thisx, PlayState* play) {
     EnDaikuKakariko* this = (EnDaikuKakariko*)thisx;
 
     Collider_DestroyCylinder(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 s32 EnDaikuKakariko_GetTalkState(EnDaikuKakariko* this, PlayState* play) {
@@ -242,7 +239,7 @@ void EnDaikuKakariko_HandleTalking(EnDaikuKakariko* this, PlayState* play) {
         Actor_GetScreenPos(play, &this->actor, &sp26, &sp24);
 
         if ((sp26 >= 0) && (sp26 <= 320) && (sp24 >= 0) && (sp24 <= 240) && (this->talkState == 0) &&
-            (func_8002F2CC(&this->actor, play, 100.0f) == 1)) {
+            (Actor_OfferTalk(&this->actor, play, 100.0f) == 1)) {
             this->actor.textId = Text_GetFaceReaction(play, maskReactionSets[this->actor.params & 3]);
 
             if (this->actor.textId == 0) {
@@ -432,7 +429,7 @@ void EnDaikuKakariko_Run(EnDaikuKakariko* this, PlayState* play) {
         Math_SmoothStepToF(&this->actor.speedXZ, this->runSpeed, 0.8f, runDist, 0.0f);
     }
 
-    Actor_MoveForward(&this->actor);
+    Actor_MoveXZGravity(&this->actor);
 
     if (this->flags & 0x40) {
         Actor_UpdateBgCheckInfo(play, &this->actor, 0.0f, 0.0f, 0.0f, 4);
@@ -495,8 +492,7 @@ void EnDaikuKakariko_Update(Actor* thisx, PlayState* play) {
     Math_SmoothStepToS(&this->neckAngle.x, this->neckAngleTarget.x, 1, 1820, 0);
 }
 
-s32 EnDaikuKakariko_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
-                                     void* thisx) {
+s32 EnDaikuKakariko_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
     EnDaikuKakariko* this = (EnDaikuKakariko*)thisx;
     Vec3s angle;
 
@@ -559,7 +555,8 @@ void EnDaikuKakariko_Draw(Actor* thisx, PlayState* play) {
         gDPSetEnvColor(POLY_OPA_DISP++, 200, 0, 150, 255);
     }
 
-    SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, EnDaikuKakariko_OverrideLimbDraw, EnDaikuKakariko_PostLimbDraw, thisx);
+    SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, EnDaikuKakariko_OverrideLimbDraw, EnDaikuKakariko_PostLimbDraw,
+                              thisx);
 
     CLOSE_DISPS(play->state.gfxCtx);
 }

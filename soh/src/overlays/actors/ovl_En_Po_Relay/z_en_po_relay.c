@@ -7,8 +7,12 @@
 #include "z_en_po_relay.h"
 #include "overlays/actors/ovl_En_Honotrap/z_en_honotrap.h"
 #include "objects/object_tk/object_tk.h"
+#include "soh/Enhancements/game-interactor/GameInteractor.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_WHILE_CULLED | ACTOR_FLAG_IGNORE_QUAKE | ACTOR_FLAG_WILL_TALK)
+#define FLAGS                                                                                  \
+    (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
+     ACTOR_FLAG_IGNORE_QUAKE | ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED)
 
 void EnPoRelay_Init(Actor* thisx, PlayState* play);
 void EnPoRelay_Destroy(Actor* thisx, PlayState* play);
@@ -91,8 +95,7 @@ void EnPoRelay_Init(Actor* thisx, PlayState* play) {
 
     Actor_ProcessInitChain(&this->actor, sInitChain);
     ActorShape_Init(&this->actor.shape, 0.0f, ActorShadow_DrawCircle, 42.0f);
-    SkelAnime_InitFlex(play, &this->skelAnime, &gDampeSkel, &gDampeFloatAnim, this->jointTable, this->morphTable,
-                       18);
+    SkelAnime_InitFlex(play, &this->skelAnime, &gDampeSkel, &gDampeFloatAnim, this->jointTable, this->morphTable, 18);
     Collider_InitCylinder(play, &this->collider);
     Collider_SetCylinder(play, &this->collider, &this->actor, &sCylinderInit);
     this->lightNode = LightContext_InsertLight(play, &play->lightCtx, &this->lightInfo);
@@ -117,12 +120,10 @@ void EnPoRelay_Destroy(Actor* thisx, PlayState* play) {
     D_80AD8D24 = 0;
     LightContext_RemoveLight(play, &play->lightCtx, this->lightNode);
     Collider_DestroyCylinder(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void EnPoRelay_SetupIdle(EnPoRelay* this) {
-    this->unk_195 = 32;
+    this->bobTimer = 32;
     this->pathIndex = 0;
     this->actor.room = -1;
     this->actor.shape.rot.y = 0;
@@ -142,38 +143,38 @@ void EnPoRelay_SetupRace(EnPoRelay* this) {
 
     EnPoRelay_Vec3sToVec3f(&vec, &D_80AD8C30[this->pathIndex]);
     this->actionTimer = ((s16)(this->actor.shape.rot.y - this->actor.world.rot.y - 0x8000) >> 0xB) % 32U;
-    func_80088B34(0);
-    this->hookshotSlotFull = (INV_CONTENT(ITEM_HOOKSHOT) != ITEM_NONE && !IS_RANDO) ||
-                             (IS_RANDO && Flags_GetTreasure(gPlayState, 0x1E));
-    this->unk_19A = Actor_WorldYawTowardPoint(&this->actor, &vec);
-    this->actor.flags |= ACTOR_FLAG_NO_LOCKON;
+    Interface_SetTimer(0);
+    this->hookshotSlotFull =
+        (INV_CONTENT(ITEM_HOOKSHOT) != ITEM_NONE && !IS_RANDO) || (IS_RANDO && Flags_GetTreasure(gPlayState, 0x1E));
+    this->yawTowardsPathPoint = Actor_WorldYawTowardPoint(&this->actor, &vec);
+    this->actor.flags |= ACTOR_FLAG_LOCK_ON_DISABLED;
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_PO_LAUGH);
     this->actionFunc = EnPoRelay_Race;
 }
 
 void EnPoRelay_SetupEndRace(EnPoRelay* this) {
     this->actor.world.rot.y = this->actor.home.rot.y + 0xC000;
-    this->actor.flags &= ~ACTOR_FLAG_NO_LOCKON;
+    this->actor.flags &= ~ACTOR_FLAG_LOCK_ON_DISABLED;
     this->actor.speedXZ = 0.0f;
     this->actionFunc = EnPoRelay_EndRace;
 }
 
 void EnPoRelay_CorrectY(EnPoRelay* this) {
     Math_StepToF(&this->actor.home.pos.y, D_80AD8C30[(this->pathIndex >= 28) ? 27 : this->pathIndex].y + 45.0f, 2.0f);
-    this->actor.world.pos.y = Math_SinS(this->unk_195 * 0x800) * 8.0f + this->actor.home.pos.y;
+    this->actor.world.pos.y = Math_SinS(this->bobTimer * 0x800) * 8.0f + this->actor.home.pos.y;
 }
 
 void EnPoRelay_Idle(EnPoRelay* this, PlayState* play) {
     Math_ScaledStepToS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 0x100);
     if (Actor_ProcessTalkRequest(&this->actor, play)) {
-        this->actor.flags &= ~ACTOR_FLAG_WILL_TALK;
+        this->actor.flags &= ~ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED;
         this->actionFunc = EnPoRelay_Talk;
     } else if (this->actor.xzDistToPlayer < 250.0f) {
-        this->actor.flags |= ACTOR_FLAG_WILL_TALK;
+        this->actor.flags |= ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED;
         this->actor.textId = this->textId;
-        func_8002F2CC(&this->actor, play, 250.0f);
+        Actor_OfferTalk(&this->actor, play, 250.0f);
     }
-    func_8002F974(&this->actor, NA_SE_EN_PO_FLY - SFX_FLAG);
+    Actor_PlaySfx_Flagged(&this->actor, NA_SE_EN_PO_FLY - SFX_FLAG);
 }
 
 void EnPoRelay_Talk(EnPoRelay* this, PlayState* play) {
@@ -183,7 +184,7 @@ void EnPoRelay_Talk(EnPoRelay* this, PlayState* play) {
         this->textId = this->actor.textId;
         EnPoRelay_SetupRace(this);
     }
-    func_8002F974(&this->actor, NA_SE_EN_PO_FLY - SFX_FLAG);
+    Actor_PlaySfx_Flagged(&this->actor, NA_SE_EN_PO_FLY - SFX_FLAG);
 }
 
 void EnPoRelay_Race(EnPoRelay* this, PlayState* play) {
@@ -195,7 +196,7 @@ void EnPoRelay_Race(EnPoRelay* this, PlayState* play) {
     if (this->actionTimer != 0) {
         this->actionTimer--;
     }
-    if (this->actionTimer == 0 && Rand_ZeroOne() < 0.03f) {
+    if (GameInteractor_Should(VB_DAMPE_DROP_FLAME, this->actionTimer == 0 && Rand_ZeroOne() < 0.03f, this)) {
         this->actionTimer = 32;
         if (this->pathIndex < 23) {
             speed = Rand_ZeroOne() * 3.0f;
@@ -207,14 +208,14 @@ void EnPoRelay_Race(EnPoRelay* this, PlayState* play) {
                 multiplier = 0.0f;
             }
             speed = 30.0f * multiplier;
-            
+
             Actor_Spawn(&play->actorCtx, play, ACTOR_EN_HONOTRAP,
-                        Math_CosS(this->unk_19A) * speed + this->actor.world.pos.x, this->actor.world.pos.y,
-                        Math_SinS(this->unk_19A) * speed + this->actor.world.pos.z, 0,
-                        (this->unk_19A + 0x8000) - (0x2000 * multiplier), 0, HONOTRAP_FLAME_DROP, true);
+                        Math_CosS(this->yawTowardsPathPoint) * speed + this->actor.world.pos.x, this->actor.world.pos.y,
+                        Math_SinS(this->yawTowardsPathPoint) * speed + this->actor.world.pos.z, 0,
+                        (this->yawTowardsPathPoint + 0x8000) - (0x2000 * multiplier), 0, HONOTRAP_FLAME_DROP);
         }
     }
-    Math_SmoothStepToS(&this->actor.world.rot.y, this->unk_19A, 2, 0x1000, 0x100);
+    Math_SmoothStepToS(&this->actor.world.rot.y, this->yawTowardsPathPoint, 2, 0x1000, 0x100);
     this->actor.shape.rot.y = this->actor.world.rot.y + (this->actionTimer * 0x800) + 0x8000;
     if (this->pathIndex < 23) {
         // If the player travels along a different path to Dampé that converges later
@@ -234,6 +235,9 @@ void EnPoRelay_Race(EnPoRelay* this, PlayState* play) {
         } else {
             speed = 3.5f;
         }
+
+        GameInteractor_Should(VB_DAMPE_GO_BACKWARDS, true, &speed);
+
         multiplier = 250.0f - this->actor.xzDistToPlayer;
         multiplier = CLAMP_MIN(multiplier, 0.0f);
         speed += multiplier * 0.02f + 1.0f;
@@ -255,8 +259,8 @@ void EnPoRelay_Race(EnPoRelay* this, PlayState* play) {
             Flags_SetSwitch(play, 0x37);
         }
     }
-    this->unk_19A = Actor_WorldYawTowardPoint(&this->actor, &vec);
-    func_8002F974(&this->actor, NA_SE_EN_PO_AWAY - SFX_FLAG);
+    this->yawTowardsPathPoint = Actor_WorldYawTowardPoint(&this->actor, &vec);
+    Actor_PlaySfx_Flagged(&this->actor, NA_SE_EN_PO_AWAY - SFX_FLAG);
 }
 
 void EnPoRelay_EndRace(EnPoRelay* this, PlayState* play) {
@@ -265,19 +269,19 @@ void EnPoRelay_EndRace(EnPoRelay* this, PlayState* play) {
         this->actionFunc = EnPoRelay_Talk2;
     } else if (play->roomCtx.curRoom.num == 5) {
         Actor_Kill(&this->actor);
-        gSaveContext.timer1State = 0;
+        gSaveContext.timerState = TIMER_STATE_OFF;
     } else if (Actor_IsFacingAndNearPlayer(&this->actor, 150.0f, 0x3000)) {
         this->actor.textId = this->textId;
-        func_8002F2CC(&this->actor, play, 250.0f);
+        Actor_OfferTalk(&this->actor, play, 250.0f);
     }
-    func_8002F974(&this->actor, NA_SE_EN_PO_FLY - SFX_FLAG);
+    Actor_PlaySfx_Flagged(&this->actor, NA_SE_EN_PO_FLY - SFX_FLAG);
 }
 
 void EnPoRelay_Talk2(EnPoRelay* this, PlayState* play) {
     Math_ScaledStepToS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 0x100);
     if (Message_GetState(&play->msgCtx) == TEXT_STATE_EVENT) {
         if (Message_ShouldAdvance(play)) {
-            if (this->hookshotSlotFull != 0) {
+            if (this->hookshotSlotFull) {
                 Actor_SetTextWithPrefix(play, &this->actor, 0x2E);
             } else {
                 Actor_SetTextWithPrefix(play, &this->actor, 0x2D);
@@ -286,18 +290,18 @@ void EnPoRelay_Talk2(EnPoRelay* this, PlayState* play) {
             Message_ContinueTextbox(play, this->actor.textId);
         }
     } else if (Actor_TextboxIsClosing(&this->actor, play)) {
-        gSaveContext.timer1State = 0;
+        gSaveContext.timerState = TIMER_STATE_OFF;
         this->actionTimer = 0;
         this->actionFunc = EnPoRelay_DisappearAndReward;
     }
-    func_8002F974(&this->actor, NA_SE_EN_PO_FLY - SFX_FLAG);
+    Actor_PlaySfx_Flagged(&this->actor, NA_SE_EN_PO_FLY - SFX_FLAG);
 }
 
 void EnPoRelay_DisappearAndReward(EnPoRelay* this, PlayState* play) {
     Vec3f vec;
     f32 multiplier;
     s32 pad;
-    Vec3f sp60;
+    Vec3f posAtGround;
     s32 pad1;
 
     this->actionTimer++;
@@ -305,68 +309,46 @@ void EnPoRelay_DisappearAndReward(EnPoRelay* this, PlayState* play) {
         if (this->actionTimer < 5) {
             vec.y = Math_SinS((this->actionTimer * 0x1000) - 0x4000) * 23.0f + (this->actor.world.pos.y + 40.0f);
             multiplier = Math_CosS((this->actionTimer * 0x1000) - 0x4000) * 23.0f;
-            vec.x = (Math_SinS(Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x4800) * multiplier) +
-                    this->actor.world.pos.x;
-            vec.z = (Math_CosS(Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x4800) * multiplier) +
-                    this->actor.world.pos.z;
+            vec.x =
+                (Math_SinS(Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x4800) * multiplier) + this->actor.world.pos.x;
+            vec.z =
+                (Math_CosS(Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x4800) * multiplier) + this->actor.world.pos.z;
         } else {
             vec.y = this->actor.world.pos.y + 40.0f + 15.0f * (this->actionTimer - 5);
-            vec.x =
-                (Math_SinS(Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x4800) * 23.0f) + this->actor.world.pos.x;
-            vec.z =
-                (Math_CosS(Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x4800) * 23.0f) + this->actor.world.pos.z;
+            vec.x = (Math_SinS(Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x4800) * 23.0f) + this->actor.world.pos.x;
+            vec.z = (Math_CosS(Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x4800) * 23.0f) + this->actor.world.pos.z;
         }
-        EffectSsDeadDb_Spawn(play, &vec, &D_80AD8D30, &D_80AD8D3C, this->actionTimer * 10 + 80, 0, 255, 255, 255,
-                             255, 0, 0, 255, 1, 9, true);
+        EffectSsDeadDb_Spawn(play, &vec, &D_80AD8D30, &D_80AD8D3C, this->actionTimer * 10 + 80, 0, 255, 255, 255, 255,
+                             0, 0, 255, 1, 9, true);
         vec.x = (this->actor.world.pos.x + this->actor.world.pos.x) - vec.x;
         vec.z = (this->actor.world.pos.z + this->actor.world.pos.z) - vec.z;
-        EffectSsDeadDb_Spawn(play, &vec, &D_80AD8D30, &D_80AD8D3C, this->actionTimer * 10 + 80, 0, 255, 255, 255,
-                             255, 0, 0, 255, 1, 9, true);
+        EffectSsDeadDb_Spawn(play, &vec, &D_80AD8D30, &D_80AD8D3C, this->actionTimer * 10 + 80, 0, 255, 255, 255, 255,
+                             0, 0, 255, 1, 9, true);
         vec.x = this->actor.world.pos.x;
         vec.z = this->actor.world.pos.z;
-        EffectSsDeadDb_Spawn(play, &vec, &D_80AD8D30, &D_80AD8D3C, this->actionTimer * 10 + 80, 0, 255, 255, 255,
-                             255, 0, 0, 255, 1, 9, true);
+        EffectSsDeadDb_Spawn(play, &vec, &D_80AD8D30, &D_80AD8D3C, this->actionTimer * 10 + 80, 0, 255, 255, 255, 255,
+                             0, 0, 255, 1, 9, true);
         if (this->actionTimer == 1) {
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_EXTINCT);
         }
     }
-    if (Math_StepToF(&this->actor.scale.x, 0.0f, 0.001f) != 0) {
-        if(!IS_RANDO) {
-            if (this->hookshotSlotFull != 0) {
-                sp60.x = this->actor.world.pos.x;
-                sp60.y = this->actor.floorHeight;
-                sp60.z = this->actor.world.pos.z;
-                if (gSaveContext.timer1Value < HIGH_SCORE(HS_DAMPE_RACE)) {
-                    HIGH_SCORE(HS_DAMPE_RACE) = gSaveContext.timer1Value;
-                }
-                if (Flags_GetCollectible(play, this->actor.params) == 0 && gSaveContext.timer1Value <= 60) {
-                    Item_DropCollectible2(play, &sp60, (this->actor.params << 8) + (0x4000 | ITEM00_HEART_PIECE));
-                } else {
-                    Actor_Spawn(&play->actorCtx, play, ACTOR_EN_ITEM00, sp60.x, sp60.y, sp60.z, 0, 0, 0, 2, true);
-                }
+    if (Math_StepToF(&this->actor.scale.x, 0.0f, 0.001f)) {
+        if (GameInteractor_Should(VB_DAMPE_AWARD_SECOND_PRIZE, this->hookshotSlotFull)) {
+            posAtGround.x = this->actor.world.pos.x;
+            posAtGround.y = this->actor.floorHeight;
+            posAtGround.z = this->actor.world.pos.z;
+            if (gSaveContext.timerSeconds < HIGH_SCORE(HS_DAMPE_RACE)) {
+                HIGH_SCORE(HS_DAMPE_RACE) = gSaveContext.timerSeconds;
+            }
+            if (Flags_GetCollectible(play, this->actor.params) == 0 && gSaveContext.timerSeconds <= 60) {
+                Item_DropCollectible2(play, &posAtGround, (this->actor.params << 8) + (0x4000 | ITEM00_HEART_PIECE));
             } else {
-                Flags_SetTempClear(play, 4);
-                HIGH_SCORE(HS_DAMPE_RACE) = gSaveContext.timer1Value;
-            }            
+                Actor_Spawn(&play->actorCtx, play, ACTOR_EN_ITEM00, posAtGround.x, posAtGround.y, posAtGround.z, 0, 0,
+                            0, 2);
+            }
         } else {
-            sp60.x = this->actor.world.pos.x;
-            sp60.y = this->actor.floorHeight;
-            sp60.z = this->actor.world.pos.z;
-
-            if (this->hookshotSlotFull == 0) {
-                Flags_SetTempClear(play, 4);
-                Flags_SetTreasure(gPlayState, 0x1E);
-                HIGH_SCORE(HS_DAMPE_RACE) = gSaveContext.timer1Value;
-            }
-
-            if (gSaveContext.timer1Value < HIGH_SCORE(HS_DAMPE_RACE)) {
-                HIGH_SCORE(HS_DAMPE_RACE) = gSaveContext.timer1Value;
-            }
-            if (Flags_GetCollectible(play, this->actor.params) == 0 && gSaveContext.timer1Value <= 60) {
-                Item_DropCollectible2(play, &sp60, (this->actor.params << 8) + (0x4000 | ITEM00_HEART_PIECE));
-            } else if (Flags_GetCollectible(play, this->actor.params) != 0) {
-                Actor_Spawn(&play->actorCtx, play, ACTOR_EN_ITEM00, sp60.x, sp60.y, sp60.z, 0, 0, 0, 2, true);
-            }
+            Flags_SetTempClear(play, 4);
+            HIGH_SCORE(HS_DAMPE_RACE) = gSaveContext.timerSeconds;
         }
         Actor_Kill(&this->actor);
     }
@@ -381,17 +363,17 @@ void EnPoRelay_Update(Actor* thisx, PlayState* play) {
 
     SkelAnime_Update(&this->skelAnime);
     this->actionFunc(this, play);
-    Actor_MoveForward(&this->actor);
+    Actor_MoveXZGravity(&this->actor);
     EnPoRelay_CorrectY(this);
     Actor_UpdateBgCheckInfo(play, &this->actor, 0.0f, 27.0f, 60.0f, 4);
     Collider_UpdateCylinder(&this->actor, &this->collider);
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);
     Actor_SetFocus(&this->actor, 50.0f);
-    if (this->unk_195 != 0) {
-        this->unk_195 -= 1;
+    if (this->bobTimer != 0) {
+        this->bobTimer -= 1;
     }
-    if (this->unk_195 == 0) {
-        this->unk_195 = 32;
+    if (this->bobTimer == 0) {
+        this->bobTimer = 32;
     }
     this->eyeTextureIdx++;
     if (this->eyeTextureIdx == 3) {
@@ -420,8 +402,7 @@ void EnPoRelay_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* 
                                   this->lightColor.b, 200);
     } else if (limbIndex == 8) {
         OPEN_DISPS(play->state.gfxCtx);
-        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                  G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_OPA_DISP++, gDampeHaloDL);
         CLOSE_DISPS(play->state.gfxCtx);
     }

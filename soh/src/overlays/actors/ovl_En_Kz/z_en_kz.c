@@ -6,9 +6,10 @@
 
 #include "z_en_kz.h"
 #include "objects/object_kz/object_kz.h"
-#include "soh/Enhancements/randomizer/adult_trade_shuffle.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include <libultraship/bridge/consolevariablebridge.h>
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_FRIENDLY)
+#define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY)
 
 void EnKz_Init(Actor* thisx, PlayState* play);
 void EnKz_Destroy(Actor* thisx, PlayState* play);
@@ -70,15 +71,10 @@ static AnimationInfo sAnimationInfo[] = {
     { &gKzMweepAnim, 1.0f, 0.0f, -1.0f, ANIMMODE_LOOP, -10.0f },
 };
 
-u16 EnKz_GetTextNoMaskChild(PlayState* play, EnKz* this) {
+u16 EnKz_GetTextIdChild(PlayState* play, EnKz* this) {
     Player* player = GET_PLAYER(play);
 
-    if ((IS_RANDO && Flags_GetRandomizerInf(RAND_INF_DUNGEONS_DONE_JABU_JABUS_BELLY)) ||
-        (!IS_RANDO && CHECK_QUEST_ITEM(QUEST_ZORA_SAPPHIRE))) {
-        // Allow turning in Ruto's letter even if you have already rescued her
-        if (IS_RANDO && !Flags_GetEventChkInf(EVENTCHKINF_KING_ZORA_MOVED)) {
-            player->exchangeItemId = EXCH_ITEM_LETTER_RUTO;
-        }
+    if (GameInteractor_Should(VB_KING_ZORA_THANK_CHILD, (CHECK_QUEST_ITEM(QUEST_ZORA_SAPPHIRE)), this)) {
         return 0x402B;
     } else if (Flags_GetEventChkInf(EVENTCHKINF_KING_ZORA_MOVED)) {
         return 0x401C;
@@ -88,14 +84,15 @@ u16 EnKz_GetTextNoMaskChild(PlayState* play, EnKz* this) {
     }
 }
 
-u16 EnKz_GetTextNoMaskAdult(PlayState* play, EnKz* this) {
+u16 EnKz_GetTextIdAdult(PlayState* play, EnKz* this) {
     Player* player = GET_PLAYER(play);
 
     // this works because both ITEM_NONE and later trade items are > ITEM_FROG
     if (INV_CONTENT(ITEM_TRADE_ADULT) >= ITEM_FROG) {
         if (!Flags_GetInfTable(INFTABLE_139)) {
-            if (!IS_RANDO) {
-                return CHECK_OWNED_EQUIP(EQUIP_TYPE_TUNIC, EQUIP_INV_TUNIC_ZORA) ? 0x401F : 0x4012;
+            if (GameInteractor_Should(VB_KING_ZORA_TUNIC_CHECK,
+                                      CHECK_OWNED_EQUIP(EQUIP_TYPE_TUNIC, EQUIP_INV_TUNIC_ZORA), this)) {
+                return 0x401F;
             } else {
                 return 0x4012;
             }
@@ -108,50 +105,73 @@ u16 EnKz_GetTextNoMaskAdult(PlayState* play, EnKz* this) {
     }
 }
 
-u16 EnKz_GetText(PlayState* play, Actor* thisx) {
+u16 EnKz_GetTextId(PlayState* play, Actor* thisx) {
     EnKz* this = (EnKz*)thisx;
-    u16 reactionText = Text_GetFaceReaction(play, 0x1E);
+    u16 textId = Text_GetFaceReaction(play, 0x1E);
 
-    if (reactionText != 0) {
-        return reactionText;
+    if (textId != 0) {
+        return textId;
     }
 
     if (LINK_IS_ADULT) {
-        return EnKz_GetTextNoMaskAdult(play, this);
+        return EnKz_GetTextIdAdult(play, this);
     } else {
-        return EnKz_GetTextNoMaskChild(play, this);
+        return EnKz_GetTextIdChild(play, this);
     }
 }
 
-s16 func_80A9C6C0(PlayState* play, Actor* thisx) {
+s16 EnKz_UpdateTalkState(PlayState* play, Actor* thisx) {
     EnKz* this = (EnKz*)thisx;
-    s16 ret = NPC_TALK_STATE_TALKING;
+    s16 talkState = NPC_TALK_STATE_TALKING;
 
     switch (Message_GetState(&play->msgCtx)) {
         case TEXT_STATE_DONE:
-            ret = NPC_TALK_STATE_IDLE;
-            switch (this->actor.textId) {
-                case 0x4012:
-                    Flags_SetInfTable(INFTABLE_139);
-                    ret = NPC_TALK_STATE_ACTION;
-                    break;
-                case 0x401B:
-                    ret = !Message_ShouldAdvance(play) ? NPC_TALK_STATE_TALKING : NPC_TALK_STATE_ACTION;
-                    break;
-                case 0x401F:
-                    Flags_SetInfTable(INFTABLE_139);
-                    break;
+            if (GameInteractor_Should(VB_GIVE_EYEBALL_FROG_EARLY, false)) {
+                if (Message_ShouldAdvance(play)) {
+                    talkState = NPC_TALK_STATE_ITEM_GIVEN;
+                }
+            } else {
+                talkState = NPC_TALK_STATE_IDLE;
+                switch (this->actor.textId) {
+                    case 0x4012:
+                        Flags_SetInfTable(INFTABLE_139);
+                        talkState = NPC_TALK_STATE_ACTION;
+                        break;
+                    case 0x401B:
+                        talkState = !Message_ShouldAdvance(play) ? NPC_TALK_STATE_TALKING : NPC_TALK_STATE_ACTION;
+                        break;
+                    case 0x401F:
+                        Flags_SetInfTable(INFTABLE_139);
+                        break;
+                }
+            }
+            break;
+        case TEXT_STATE_CLOSING:
+            if (GameInteractor_Should(VB_GIVE_EYEBALL_FROG_EARLY, false)) {
+                talkState = NPC_TALK_STATE_IDLE;
+                switch (this->actor.textId) {
+                    case 0x4012:
+                        Flags_SetInfTable(INFTABLE_139);
+                        FALLTHROUGH;
+                    case 0x401B:
+                        talkState = NPC_TALK_STATE_ACTION;
+                        break;
+                    case 0x401F:
+                        Flags_SetInfTable(INFTABLE_139);
+                        break;
+                }
             }
             break;
         case TEXT_STATE_DONE_FADING:
             if (this->actor.textId != 0x4014) {
                 if (this->actor.textId == 0x401B && !this->sfxPlayed) {
-                    Audio_PlaySoundGeneral(NA_SE_SY_CORRECT_CHIME, &D_801333D4, 4, &D_801333E0, &D_801333E0,
-                                           &D_801333E8);
+                    Audio_PlaySfxGeneral(NA_SE_SY_CORRECT_CHIME, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                         &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
                     this->sfxPlayed = true;
                 }
             } else if (!this->sfxPlayed) {
-                Audio_PlaySoundGeneral(NA_SE_SY_TRE_BOX_APPEAR, &D_801333D4, 4, &D_801333E0, &D_801333E0, &D_801333E8);
+                Audio_PlaySfxGeneral(NA_SE_SY_TRE_BOX_APPEAR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                     &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
                 this->sfxPlayed = true;
             }
             break;
@@ -161,8 +181,10 @@ s16 func_80A9C6C0(PlayState* play, Actor* thisx) {
             }
             if (this->actor.textId == 0x4014) {
                 if (play->msgCtx.choiceIndex == 0) {
-                    EnKz_SetupGetItem(this, play);
-                    ret = NPC_TALK_STATE_ACTION;
+                    if (!GameInteractor_Should(VB_GIVE_EYEBALL_FROG_EARLY, false)) {
+                        EnKz_SetupGetItem(this, play);
+                    }
+                    talkState = NPC_TALK_STATE_ACTION;
                 } else {
                     this->actor.textId = 0x4016;
                     Message_ContinueTextbox(play, this->actor.textId);
@@ -171,18 +193,17 @@ s16 func_80A9C6C0(PlayState* play, Actor* thisx) {
             break;
         case TEXT_STATE_EVENT:
             if (Message_ShouldAdvance(play)) {
-                ret = NPC_TALK_STATE_ACTION;
+                talkState = NPC_TALK_STATE_ACTION;
             }
             break;
         case TEXT_STATE_NONE:
         case TEXT_STATE_DONE_HAS_NEXT:
-        case TEXT_STATE_CLOSING:
         case TEXT_STATE_SONG_DEMO_DONE:
         case TEXT_STATE_8:
         case TEXT_STATE_9:
             break;
     }
-    return ret;
+    return talkState;
 }
 
 void EnKz_UpdateEyes(EnKz* this) {
@@ -195,56 +216,62 @@ void EnKz_UpdateEyes(EnKz* this) {
     }
 }
 
-s32 func_80A9C95C(PlayState* play, EnKz* this, s16* talkState, f32 unkf, NpcGetTextIdFunc getTextId,
-                  NpcUpdateTalkStateFunc updateTalkState) {
+/**
+ * Custom version of Npc_UpdateTalking.
+ *
+ * @see Npc_UpdateTalking
+ */
+s32 EnKz_UpdateTalking(PlayState* play, EnKz* this, s16* talkState, f32 interactRange, NpcGetTextIdFunc getTextId,
+                       NpcUpdateTalkStateFunc updateTalkState) {
     Player* player = GET_PLAYER(play);
-    s16 sp32;
-    s16 sp30;
+    s16 x;
+    s16 y;
     f32 xzDistToPlayer;
     f32 yaw;
 
     if (Actor_ProcessTalkRequest(&this->actor, play)) {
         *talkState = NPC_TALK_STATE_TALKING;
-        return 1;
+        return true;
     }
 
     if (*talkState != NPC_TALK_STATE_IDLE) {
         *talkState = updateTalkState(play, &this->actor);
-        return 0;
+        return false;
     }
 
     yaw = Math_Vec3f_Yaw(&this->actor.home.pos, &player->actor.world.pos);
     yaw -= this->actor.shape.rot.y;
     if ((fabsf(yaw) > 1638.0f) || (this->actor.xzDistToPlayer < 265.0f)) {
-        this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
-        return 0;
+        this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
+        return false;
     }
 
-    this->actor.flags |= ACTOR_FLAG_TARGETABLE;
+    this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
 
-    Actor_GetScreenPos(play, &this->actor, &sp32, &sp30);
-    if (!((sp32 >= -30) && (sp32 < 361) && (sp30 >= -10) && (sp30 < 241))) {
-        return 0;
+    Actor_GetScreenPos(play, &this->actor, &x, &y);
+    if (!((x >= -30) && (x < 361) && (y >= -10) && (y < 241))) {
+        return false;
     }
 
     xzDistToPlayer = this->actor.xzDistToPlayer;
     this->actor.xzDistToPlayer = Math_Vec3f_DistXZ(&this->actor.home.pos, &player->actor.world.pos);
-    if (func_8002F2CC(&this->actor, play, unkf) == 0) {
+    if (!Actor_OfferTalk(&this->actor, play, interactRange)) {
         this->actor.xzDistToPlayer = xzDistToPlayer;
-        return 0;
+        return false;
     }
     this->actor.xzDistToPlayer = xzDistToPlayer;
     this->actor.textId = getTextId(play, &this->actor);
 
-    return 0;
+    return false;
 }
 
 void func_80A9CB18(EnKz* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
 
-    if (func_80A9C95C(play, this, &this->interactInfo.talkState, 340.0f, EnKz_GetText, func_80A9C6C0)) {
-        if (((IS_RANDO && LINK_IS_CHILD) || this->actor.textId == 0x401A) && !Flags_GetEventChkInf(EVENTCHKINF_KING_ZORA_MOVED)) {
-            if (func_8002F368(play) == EXCH_ITEM_LETTER_RUTO) {
+    if (EnKz_UpdateTalking(play, this, &this->interactInfo.talkState, 340.0f, EnKz_GetTextId, EnKz_UpdateTalkState)) {
+        if (GameInteractor_Should(VB_BE_ABLE_TO_EXCHANGE_RUTOS_LETTER, (this->actor.textId == 0x401A), this) &&
+            !Flags_GetEventChkInf(EVENTCHKINF_KING_ZORA_MOVED)) {
+            if (Actor_GetPlayerExchangeItemId(play) == EXCH_ITEM_LETTER_RUTO) {
                 this->actor.textId = 0x401B;
                 this->sfxPlayed = false;
             } else {
@@ -256,27 +283,27 @@ void func_80A9CB18(EnKz* this, PlayState* play) {
 
         if (LINK_IS_ADULT) {
             if ((INV_CONTENT(ITEM_TRADE_ADULT) == ITEM_PRESCRIPTION) &&
-                (func_8002F368(play) == EXCH_ITEM_PRESCRIPTION)) {
-                if (!IS_RANDO || !Flags_GetTreasure(play, 0x1F)) {
-                    this->actor.textId = 0x4014;
-                    this->sfxPlayed = false;
-                    player->actor.textId = this->actor.textId;
+                (Actor_GetPlayerExchangeItemId(play) == EXCH_ITEM_PRESCRIPTION)) {
+                this->actor.textId = 0x4014;
+                this->sfxPlayed = false;
+                player->actor.textId = this->actor.textId;
+                if (!GameInteractor_Should(VB_GIVE_EYEBALL_FROG_EARLY, false)) {
                     this->isTrading = true;
-                    return;
                 }
+                return;
             }
-
-            this->isTrading = false;
+            if (!GameInteractor_Should(VB_GIVE_EYEBALL_FROG_EARLY, false)) {
+                this->isTrading = false;
+            }
             if (Flags_GetInfTable(INFTABLE_139)) {
                 this->actor.textId = CHECK_QUEST_ITEM(QUEST_SONG_SERENADE) ? 0x4045 : 0x401A;
                 player->actor.textId = this->actor.textId;
             } else {
-                if (!IS_RANDO) {
-                    this->actor.textId = CHECK_OWNED_EQUIP(EQUIP_TYPE_TUNIC, EQUIP_INV_TUNIC_ZORA) ? 0x401F : 0x4012;
-                } else {
-                    this->actor.textId = 0x4012;
-                }
-
+                this->actor.textId =
+                    GameInteractor_Should(VB_KING_ZORA_TUNIC_CHECK,
+                                          CHECK_OWNED_EQUIP(EQUIP_TYPE_TUNIC, EQUIP_INV_TUNIC_ZORA), this)
+                        ? 0x401F
+                        : 0x4012;
                 player->actor.textId = this->actor.textId;
             }
         }
@@ -301,7 +328,7 @@ s32 EnKz_FollowPath(EnKz* this, PlayState* play) {
     pathDiffZ = pointPos->z - this->actor.world.pos.z;
     Math_SmoothStepToS(&this->actor.world.rot.y, (Math_FAtan2F(pathDiffX, pathDiffZ) * (0x8000 / M_PI)), 0xA, 0x3E8, 1);
 
-    if ((SQ(pathDiffX) + SQ(pathDiffZ)) < 10.0f * CVarGetInteger(CVAR_ENHANCEMENT("MweepSpeed"), 1)) {
+    if ((SQ(pathDiffX) + SQ(pathDiffZ)) < 10.0f) {
         this->waypoint++;
         if (this->waypoint >= path->count) {
             this->waypoint = 0;
@@ -344,36 +371,14 @@ void EnKz_Init(Actor* thisx, PlayState* play) {
     this->interactInfo.talkState = NPC_TALK_STATE_IDLE;
     Animation_ChangeByInfo(&this->skelanime, sAnimationInfo, ENKZ_ANIM_0);
 
-    if (!IS_RANDO) {
-        if (Flags_GetEventChkInf(EVENTCHKINF_KING_ZORA_MOVED)) {
-            EnKz_SetMovedPos(this, play);
-        }
-    } else {
-        int zorasFountain = Randomizer_GetSettingValue(RSK_ZORAS_FOUNTAIN);
-        switch (zorasFountain) {
-            case 0:
-                if (Flags_GetEventChkInf(EVENTCHKINF_KING_ZORA_MOVED)) {
-                    EnKz_SetMovedPos(this, play);
-                }
-                break;
-            case 1:
-                if (LINK_IS_ADULT) {
-                    EnKz_SetMovedPos(this, play);
-                } else if (Flags_GetEventChkInf(EVENTCHKINF_KING_ZORA_MOVED)) {
-                    EnKz_SetMovedPos(this, play);
-                }
-                break;
-            case 2:
-                EnKz_SetMovedPos(this, play);
-                break;
-        }
+    if (GameInteractor_Should(VB_KING_ZORA_BE_MOVED, (Flags_GetEventChkInf(EVENTCHKINF_KING_ZORA_MOVED)), this)) {
+        EnKz_SetMovedPos(this, play);
     }
 
     if (LINK_IS_ADULT) {
         if (!Flags_GetInfTable(INFTABLE_138)) {
-            Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BG_ICE_SHELTER,
-                               this->actor.world.pos.x, this->actor.world.pos.y, this->actor.world.pos.z, 0, 0, 0,
-                               0x04FF);
+            Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_BG_ICE_SHELTER, this->actor.world.pos.x,
+                               this->actor.world.pos.y, this->actor.world.pos.z, 0, 0, 0, 0x04FF);
         }
         this->actionFunc = EnKz_Wait;
     } else {
@@ -385,8 +390,6 @@ void EnKz_Destroy(Actor* thisx, PlayState* play) {
     EnKz* this = (EnKz*)thisx;
 
     Collider_DestroyCylinder(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelanime);
 }
 
 void EnKz_PreMweepWait(EnKz* this, PlayState* play) {
@@ -395,7 +398,7 @@ void EnKz_PreMweepWait(EnKz* this, PlayState* play) {
         this->interactInfo.talkState = NPC_TALK_STATE_IDLE;
         this->actionFunc = EnKz_SetupMweep;
     } else {
-        func_80034F54(play, this->unk_2A6, this->unk_2BE, 12);
+        Actor_UpdateFidgetTables(play, this->fidgetTableY, this->fidgetTableZ, 12);
     }
 }
 
@@ -414,8 +417,8 @@ void EnKz_SetupMweep(EnKz* this, PlayState* play) {
     initPos.y += -100.0f;
     initPos.z += 260.0f;
     Play_CameraSetAtEye(play, this->cutsceneCamera, &pos, &initPos);
-    func_8002DF54(play, &this->actor, 8);
-    this->actor.speedXZ = 0.1f * CVarGetInteger(CVAR_ENHANCEMENT("MweepSpeed"), 1);
+    Player_SetCsActionWithHaltedActors(play, &this->actor, 8);
+    this->actor.speedXZ = 0.1f;
     this->actionFunc = EnKz_Mweep;
 }
 
@@ -446,16 +449,19 @@ void EnKz_Mweep(EnKz* this, PlayState* play) {
 void EnKz_StopMweep(EnKz* this, PlayState* play) {
     Play_ChangeCameraStatus(play, this->gameplayCamera, CAM_STAT_ACTIVE);
     Play_ClearCamera(play, this->cutsceneCamera);
-    func_8002DF54(play, &this->actor, 7);
+    Player_SetCsActionWithHaltedActors(play, &this->actor, 7);
     this->actionFunc = EnKz_Wait;
 }
 
 void EnKz_Wait(EnKz* this, PlayState* play) {
     if (this->interactInfo.talkState == NPC_TALK_STATE_ACTION) {
+        if (GameInteractor_Should(VB_GIVE_EYEBALL_FROG_EARLY, false)) {
+            this->interactInfo.talkState = NPC_TALK_STATE_IDLE;
+        }
         this->actionFunc = EnKz_SetupGetItem;
         EnKz_SetupGetItem(this, play);
     } else {
-        func_80034F54(play, this->unk_2A6, this->unk_2BE, 12);
+        Actor_UpdateFidgetTables(play, this->fidgetTableY, this->fidgetTableZ, 12);
     }
 }
 
@@ -465,38 +471,26 @@ void EnKz_SetupGetItem(EnKz* this, PlayState* play) {
     f32 xzRange;
     f32 yRange;
 
-    if (Actor_HasParent(&this->actor, play)) {
+    if (Actor_HasParent(&this->actor, play) || !GameInteractor_Should(VB_ADULT_KING_ZORA_ITEM_GIVE, true, this)) {
         this->actor.parent = NULL;
         this->interactInfo.talkState = NPC_TALK_STATE_TALKING;
         this->actionFunc = EnKz_StartTimer;
     } else {
-        if (IS_RANDO) {
-            if (this->isTrading) {
-                getItemEntry = Randomizer_GetItemFromKnownCheck(RC_ZD_TRADE_PRESCRIPTION, GI_FROG);
-                getItemId = getItemEntry.getItemId;
-                Randomizer_ConsumeAdultTradeItem(play, ITEM_PRESCRIPTION);
-                Flags_SetTreasure(play, 0x1F);
-            } else {
-                getItemEntry = Randomizer_GetItemFromKnownCheck(RC_ZD_KING_ZORA_THAWED, GI_TUNIC_ZORA);
-                getItemId = getItemEntry.getItemId;
-            }
+        if (GameInteractor_Should(VB_GIVE_EYEBALL_FROG_EARLY, false)) {
+            getItemId = Actor_GetPlayerExchangeItemId(play) == EXCH_ITEM_PRESCRIPTION ? GI_FROG : GI_TUNIC_ZORA;
         } else {
             getItemId = this->isTrading ? GI_FROG : GI_TUNIC_ZORA;
         }
         yRange = fabsf(this->actor.yDistToPlayer) + 1.0f;
         xzRange = this->actor.xzDistToPlayer + 1.0f;
-        if (!IS_RANDO || getItemEntry.getItemId == GI_NONE) {
-            func_8002F434(&this->actor, play, getItemId, xzRange, yRange);
-        } else {
-            GiveItemEntryFromActor(&this->actor, play, getItemEntry, xzRange, yRange);
-        }
+        Actor_OfferGetItem(&this->actor, play, getItemId, xzRange, yRange);
     }
 }
 
 void EnKz_StartTimer(EnKz* this, PlayState* play) {
     if ((Message_GetState(&play->msgCtx) == TEXT_STATE_DONE) && Message_ShouldAdvance(play)) {
-        if (INV_CONTENT(ITEM_TRADE_ADULT) == ITEM_FROG && !IS_RANDO) {
-            func_80088AA0(180); // start timer2 with 3 minutes
+        if (GameInteractor_Should(VB_TRADE_TIMER_FROG, INV_CONTENT(ITEM_TRADE_ADULT) == ITEM_FROG)) {
+            Interface_SetSubTimer(180); // start timer2 with 3 minutes
             gSaveContext.eventInf[1] &= ~1;
         }
         this->interactInfo.talkState = NPC_TALK_STATE_IDLE;
@@ -515,7 +509,7 @@ void EnKz_Update(Actor* thisx, PlayState* play) {
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);
     SkelAnime_Update(&this->skelanime);
     EnKz_UpdateEyes(this);
-    Actor_MoveForward(&this->actor);
+    Actor_MoveXZGravity(&this->actor);
     if (this->actionFunc != EnKz_StartTimer) {
         func_80A9CB18(this, play);
     }
@@ -526,8 +520,8 @@ s32 EnKz_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* po
     EnKz* this = (EnKz*)thisx;
 
     if (limbIndex == 8 || limbIndex == 9 || limbIndex == 10) {
-        rot->y += Math_SinS(this->unk_2A6[limbIndex]) * 200.0f;
-        rot->z += Math_CosS(this->unk_2BE[limbIndex]) * 200.0f;
+        rot->y += Math_SinS(this->fidgetTableY[limbIndex]) * 200.0f;
+        rot->z += Math_CosS(this->fidgetTableZ[limbIndex]) * 200.0f;
     }
     if (limbIndex) {}
     return false;

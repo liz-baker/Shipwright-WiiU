@@ -7,7 +7,7 @@
 #include "z_obj_ice_poly.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
 
-#define FLAGS ACTOR_FLAG_UPDATE_WHILE_CULLED
+#define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
 void ObjIcePoly_Init(Actor* thisx, PlayState* play);
 void ObjIcePoly_Destroy(Actor* thisx, PlayState* play);
@@ -120,7 +120,7 @@ void ObjIcePoly_Idle(ObjIcePoly* this, PlayState* play) {
     if (this->colliderIce.base.acFlags & AC_HIT) {
         this->meltTimer = -this->colliderIce.info.acHitInfo->toucher.damage;
         this->actor.focus.rot.y = this->actor.yawTowardsPlayer;
-        OnePointCutscene_Init(play, 5120, 40, &this->actor, MAIN_CAM);
+        OnePointCutscene_Init(play, 5120, 40, &this->actor, CAM_ID_MAIN);
         this->actionFunc = ObjIcePoly_Melt;
     } else if (this->actor.parent != NULL) {
         this->actor.parent->freezeTimer = 40;
@@ -198,11 +198,10 @@ void ObjIcePoly_Draw(Actor* thisx, PlayState* play) {
     func_8002ED80(&this->actor, play, 0);
     Matrix_RotateZYX(0x500, 0, -0x500, MTXMODE_APPLY);
 
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPSegment(POLY_XLU_DISP++, 0x08,
-               Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, play->gameplayFrames % 0x100, 0x20, 0x10, 1, 0,
-                                (play->gameplayFrames * 2) % 0x100, 0x40, 0x20));
+               Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, 0, play->gameplayFrames % 0x100, 0x20, 0x10, 1, 0,
+                                  (play->gameplayFrames * 2) % 0x100, 0x40, 0x20, 0, 1, 0, 2));
     gDPSetEnvColor(POLY_XLU_DISP++, 0, 50, 100, this->alpha);
     gSPDisplayList(POLY_XLU_DISP++, gEffIceFragment3DL);
 

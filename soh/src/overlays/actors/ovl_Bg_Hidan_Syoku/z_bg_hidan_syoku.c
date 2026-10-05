@@ -7,7 +7,7 @@
 #include "z_bg_hidan_syoku.h"
 #include "objects/object_hidan_objects/object_hidan_objects.h"
 
-#define FLAGS ACTOR_FLAG_UPDATE_WHILE_CULLED
+#define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
 void BgHidanSyoku_Init(Actor* thisx, PlayState* play);
 void BgHidanSyoku_Destroy(Actor* thisx, PlayState* play);
@@ -61,7 +61,7 @@ void func_8088F47C(BgHidanSyoku* this) {
 }
 
 void func_8088F4B8(BgHidanSyoku* this, PlayState* play) {
-    if (Flags_GetClear(play, this->dyna.actor.room) && func_8004356C(&this->dyna)) {
+    if (Flags_GetClear(play, this->dyna.actor.room) && DynaPolyActor_IsPlayerOnTop(&this->dyna)) {
         this->timer = 140;
         this->actionFunc = func_8088F514;
     }
@@ -75,7 +75,7 @@ void func_8088F514(BgHidanSyoku* this, PlayState* play) {
     if (this->timer == 0) {
         func_8088F47C(this);
     } else {
-        func_8002F974(&this->dyna.actor, NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
+        Actor_PlaySfx_Flagged(&this->dyna.actor, NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
     }
 }
 
@@ -87,7 +87,7 @@ void func_8088F5A0(BgHidanSyoku* this, PlayState* play) {
     if (this->timer == 0) {
         func_8088F47C(this);
     } else {
-        func_8002F974(&this->dyna.actor, NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
+        Actor_PlaySfx_Flagged(&this->dyna.actor, NA_SE_EV_ELEVATOR_MOVE3 - SFX_FLAG);
     }
 }
 
@@ -109,14 +109,14 @@ void BgHidanSyoku_Update(Actor* thisx, PlayState* play) {
     BgHidanSyoku* this = (BgHidanSyoku*)thisx;
 
     this->actionFunc(this, play);
-    if (func_8004356C(&this->dyna)) {
+    if (DynaPolyActor_IsPlayerOnTop(&this->dyna)) {
         if (this->unk_168 == 0) {
             this->unk_168 = 3;
         }
-        Camera_ChangeSetting(play->cameraPtrs[MAIN_CAM], CAM_SET_FIRE_PLATFORM);
-    } else if (!func_8004356C(&this->dyna)) {
+        Camera_RequestSetting(play->cameraPtrs[CAM_ID_MAIN], CAM_SET_FIRE_PLATFORM);
+    } else if (!DynaPolyActor_IsPlayerOnTop(&this->dyna)) {
         if (this->unk_168 != 0) {
-            Camera_ChangeSetting(play->cameraPtrs[MAIN_CAM], CAM_SET_DUNGEON0);
+            Camera_RequestSetting(play->cameraPtrs[CAM_ID_MAIN], CAM_SET_DUNGEON0);
         }
         this->unk_168 = 0;
     }

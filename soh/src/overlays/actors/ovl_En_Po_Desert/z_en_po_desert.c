@@ -7,7 +7,7 @@
 #include "z_en_po_desert.h"
 #include "objects/object_po_field/object_po_field.h"
 
-#define FLAGS (ACTOR_FLAG_UPDATE_WHILE_CULLED | ACTOR_FLAG_LENS | ACTOR_FLAG_IGNORE_QUAKE)
+#define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_REACT_TO_LENS | ACTOR_FLAG_IGNORE_QUAKE)
 
 void EnPoDesert_Init(Actor* thisx, PlayState* play);
 void EnPoDesert_Destroy(Actor* thisx, PlayState* play);
@@ -63,8 +63,7 @@ void EnPoDesert_Init(Actor* thisx, PlayState* play) {
     EnPoDesert* this = (EnPoDesert*)thisx;
 
     Actor_ProcessInitChain(&this->actor, sInitChain);
-    SkelAnime_Init(play, &this->skelAnime, &gPoeFieldSkel, &gPoeFieldFloatAnim, this->jointTable, this->morphTable,
-                   10);
+    SkelAnime_Init(play, &this->skelAnime, &gPoeFieldSkel, &gPoeFieldFloatAnim, this->jointTable, this->morphTable, 10);
     Collider_InitCylinder(play, &this->collider);
     Collider_SetCylinder(play, &this->collider, &this->actor, &sColliderInit);
     this->lightColor.r = 255;
@@ -86,8 +85,6 @@ void EnPoDesert_Destroy(Actor* thisx, PlayState* play) {
 
     LightContext_RemoveLight(play, &play->lightCtx, this->lightNode);
     Collider_DestroyCylinder(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void EnPoDesert_SetNextPathPoint(EnPoDesert* this, PlayState* play) {
@@ -134,7 +131,7 @@ void EnPoDesert_UpdateSpeedModifier(EnPoDesert* this) {
 }
 
 void EnPoDesert_WaitForPlayer(EnPoDesert* this, PlayState* play) {
-    func_8002F974(&this->actor, NA_SE_EN_PO_FLY - SFX_FLAG);
+    Actor_PlaySfx_Flagged(&this->actor, NA_SE_EN_PO_FLY - SFX_FLAG);
     if (this->actor.xzDistToPlayer < 200.0f && (this->currentPathPoint != 2 || play->actorCtx.lensActive)) {
         if (this->currentPathPoint == 2) {
             if (Play_InCsMode(play)) {
@@ -165,7 +162,7 @@ void EnPoDesert_MoveToNextPoint(EnPoDesert* this, PlayState* play) {
     this->actor.world.rot.y = Actor_WorldYawTowardPoint(&this->actor, &this->actor.home.pos);
     Math_ApproachS(&this->actor.shape.rot.y, this->actor.world.rot.y + 0x8000, 5, 0x400);
     this->actor.speedXZ = sinf(this->speedModifier * (M_PI / 32.0f)) * 2.5f + 5.5f;
-    func_8002F974(&this->actor, NA_SE_EN_PO_FLY - SFX_FLAG);
+    Actor_PlaySfx_Flagged(&this->actor, NA_SE_EN_PO_FLY - SFX_FLAG);
     this->targetY = this->actor.home.pos.y - ((temp_f20 * this->yDiff) / this->initDistToNextPoint);
     if (temp_f20 < 40.0f) {
         if (this->currentPathPoint != 0) {
@@ -194,23 +191,23 @@ void EnPoDesert_Update(Actor* thisx, PlayState* play) {
 
     SkelAnime_Update(&this->skelAnime);
     this->actionFunc(this, play);
-    Actor_MoveForward(&this->actor);
+    Actor_MoveXZGravity(&this->actor);
     EnPoDesert_UpdateSpeedModifier(this);
     Actor_UpdateBgCheckInfo(play, &this->actor, 0.0f, 27.0f, 60.0f, 4);
     Actor_SetFocus(&this->actor, 42.0f);
     Collider_UpdateCylinder(&this->actor, &this->collider);
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);
     if (play->actorCtx.lensActive) {
-        this->actor.flags |= ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_LENS;
+        this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_REACT_TO_LENS;
         this->actor.shape.shadowDraw = ActorShadow_DrawCircle;
     } else {
         this->actor.shape.shadowDraw = NULL;
-        this->actor.flags &= ~(ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_LENS);
+        this->actor.flags &= ~(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_REACT_TO_LENS);
     }
 }
 
-s32 EnPoDesert_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
-                                void* thisx, Gfx** gfxP) {
+s32 EnPoDesert_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx,
+                                Gfx** gfxP) {
     EnPoDesert* this = (EnPoDesert*)thisx;
     f32 mtxScale;
 
@@ -218,14 +215,13 @@ s32 EnPoDesert_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec
         mtxScale = this->actionTimer / 16.0f;
         Matrix_Scale(mtxScale, mtxScale, mtxScale, MTXMODE_APPLY);
     }
-    if (!CHECK_FLAG_ALL(this->actor.flags, ACTOR_FLAG_LENS)) {
+    if (!CHECK_FLAG_ALL(this->actor.flags, ACTOR_FLAG_REACT_TO_LENS)) {
         *dList = NULL;
     }
     return false;
 }
 
-void EnPoDesert_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, void* thisx,
-                             Gfx** gfxP) {
+void EnPoDesert_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, void* thisx, Gfx** gfxP) {
     static Vec3f baseLightPos = { 0.0f, 1400.0f, 0.0f };
 
     EnPoDesert* this = (EnPoDesert*)thisx;
@@ -239,11 +235,10 @@ void EnPoDesert_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s*
         color.r = (s16)(rand * 30.0f) + 225;
         color.g = (s16)(rand * 100.0f) + 155;
         color.b = (s16)(rand * 160.0f) + 95;
-        if (CHECK_FLAG_ALL(this->actor.flags, ACTOR_FLAG_LENS)) {
+        if (CHECK_FLAG_ALL(this->actor.flags, ACTOR_FLAG_REACT_TO_LENS)) {
             gDPPipeSync((*gfxP)++);
             gDPSetEnvColor((*gfxP)++, color.r, color.g, color.b, 255);
-            gSPMatrix((*gfxP)++, MATRIX_NEWMTX(play->state.gfxCtx),
-                      G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPMatrix((*gfxP)++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
             gSPDisplayList((*gfxP)++, gPoeFieldLanternDL);
             gSPDisplayList((*gfxP)++, gPoeFieldLanternTopDL);
             gDPPipeSync((*gfxP)++);
@@ -267,7 +262,7 @@ void EnPoDesert_Draw(Actor* thisx, PlayState* play) {
     } else {
         gSPSegment(POLY_XLU_DISP++, 0x0C, D_80116280 + 2);
     }
-    POLY_XLU_DISP = SkelAnime_Draw(play, this->skelAnime.skeleton, this->skelAnime.jointTable,
-                                   EnPoDesert_OverrideLimbDraw, EnPoDesert_PostLimbDraw, &this->actor, POLY_XLU_DISP);
+    POLY_XLU_DISP = SkelAnime_DrawSkeleton2(play, &this->skelAnime, EnPoDesert_OverrideLimbDraw,
+                                            EnPoDesert_PostLimbDraw, &this->actor, POLY_XLU_DISP);
     CLOSE_DISPS(play->state.gfxCtx);
 }

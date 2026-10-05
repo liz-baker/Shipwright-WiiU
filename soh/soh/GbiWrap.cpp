@@ -1,9 +1,11 @@
 #include "z64.h"
 
-//OTRTODO - this is awful
+#include <bit>
+
+// OTRTODO - this is awful
 
 extern "C" {
-void InitOTR();
+void InitOTR(int argc, char* argv[]);
 void Graph_ProcessFrame(void (*run_one_game_iter)(void));
 void Graph_StartFrame();
 void Graph_ProcessGfxCommands(Gfx* commands);
@@ -29,9 +31,7 @@ CollisionHeader* ResourceMgr_LoadColByName(char* path);
 uint64_t GetPerfCounter();
 int ResourceMgr_OTRSigCheck(char* imgData);
 void ResourceMgr_PushCurrentDirectory(char* path);
-
 }
-
 
 extern "C" void gSPSegment(void* value, int segNum, uintptr_t target) {
     char* imgData = (char*)target;
@@ -47,7 +47,7 @@ extern "C" void gSPSegment(void* value, int segNum, uintptr_t target) {
     if (res) {
         uintptr_t desiredTarget = (uintptr_t)ResourceMgr_LoadIfDListByName(imgData);
 
-        if (desiredTarget != NULL)
+        if (desiredTarget)
             target = desiredTarget;
     }
 
@@ -70,13 +70,32 @@ extern "C" void gSPDisplayList(Gfx* pkt, Gfx* dl) {
     char* imgData = (char*)dl;
 
     if (ResourceMgr_OTRSigCheck(imgData) == 1) {
-        
-        //ResourceMgr_PushCurrentDirectory(imgData);
-        //gsSPPushCD(pkt++, imgData);
+
+        // ResourceMgr_PushCurrentDirectory(imgData);
+        // gsSPPushCD(pkt++, imgData);
         dl = ResourceMgr_LoadGfxByName(imgData);
     }
 
     __gSPDisplayList(pkt, dl);
+}
+
+extern "C" void gDPSetTileSizeInterp(Gfx* pkt, int t, float uls, float ult, float lrs, float lrt) {
+    __gDPSetTileSizeInterp(pkt, t, 0, 0, 0, 0);
+    pkt->words.w0 = _SHIFTL(G_SETTILESIZE_INTERP, 24, 8);
+    pkt++;
+
+    pkt->words.w0 = std::bit_cast<u32>(uls);
+    pkt->words.w1 = std::bit_cast<u32>(ult);
+    pkt++;
+
+    pkt->words.w0 = std::bit_cast<u32>(lrs);
+    pkt->words.w1 = std::bit_cast<u32>(lrt);
+    pkt++;
+}
+
+extern "C" void gDPSetTileSizeLerp(Gfx* pkt, int t, float uls0, float ult0, float lrs0, float lrt0, float uls1,
+                                   float ult1, float lrs1, float lrt1) {
+    __gDPSetTileSizeLerp(pkt, t, uls0, ult0, lrs0, lrt0, uls1, ult1, lrs1, lrt1);
 }
 
 extern "C" void gSPDisplayListOffset(Gfx* pkt, Gfx* dl, int offset) {
@@ -96,15 +115,14 @@ extern "C" void gSPVertex(Gfx* pkt, uintptr_t v, int n, int v0) {
     __gSPVertex(pkt, v, n, v0);
 }
 
-extern "C" void gSPInvalidateTexCache(Gfx* pkt, uintptr_t texAddr)
-{
+extern "C" void gSPInvalidateTexCache(Gfx* pkt, uintptr_t texAddr) {
     char* imgData = (char*)texAddr;
-    
+
     if (texAddr != 0 && ResourceMgr_OTRSigCheck(imgData)) {
         // Temporary solution to the mq/nonmq issue, this will be
         // handled better with LUS 1.0
-        texAddr = (uintptr_t)ResourceMgr_LoadTexOrDListByName(imgData); 
+        texAddr = (uintptr_t)ResourceMgr_LoadTexOrDListByName(imgData);
     }
 
     __gSPInvalidateTexCache(pkt, texAddr);
- }
+}

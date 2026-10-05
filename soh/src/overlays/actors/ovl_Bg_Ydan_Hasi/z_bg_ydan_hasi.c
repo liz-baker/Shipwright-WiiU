@@ -6,8 +6,9 @@
 
 #include "z_bg_ydan_hasi.h"
 #include "objects/object_ydan_objects/object_ydan_objects.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
-#define FLAGS (ACTOR_FLAG_UPDATE_WHILE_CULLED | ACTOR_FLAG_DRAW_WHILE_CULLED)
+#define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
 void BgYdanHasi_Init(Actor* thisx, PlayState* play);
 void BgYdanHasi_Destroy(Actor* thisx, PlayState* play);
@@ -114,22 +115,23 @@ void BgYdanHasi_MoveWater(BgYdanHasi* this, PlayState* play) {
             Flags_UnsetSwitch(play, this->type);
             this->actionFunc = BgYdanHasi_InitWater;
         }
-        func_8002F948(&this->dyna.actor, NA_SE_EV_WATER_LEVEL_DOWN - SFX_FLAG);
+        Actor_PlaySfx_FlaggedCentered2(&this->dyna.actor, NA_SE_EV_WATER_LEVEL_DOWN - SFX_FLAG);
     } else {
         if (Math_StepToF(&this->dyna.actor.world.pos.y, this->dyna.actor.home.pos.y - 47.0f, 0.5f)) {
             this->actionFunc = BgYdanHasi_DecWaterTimer;
         }
-        func_8002F948(&this->dyna.actor, NA_SE_EV_WATER_LEVEL_DOWN - SFX_FLAG);
+        Actor_PlaySfx_FlaggedCentered2(&this->dyna.actor, NA_SE_EV_WATER_LEVEL_DOWN - SFX_FLAG);
     }
     waterBox = &play->colCtx.colHeader->waterBoxes[1];
     waterBox->ySurface = this->dyna.actor.world.pos.y;
 }
 
 void BgYdanHasi_DecWaterTimer(BgYdanHasi* this, PlayState* play) {
-    if (this->timer != 0) {
+    if (GameInteractor_Should(VB_SWITCH_TIMER_TICK, this->timer != 0, this, &this->timer)) {
         this->timer--;
     }
-    func_8002F994(&this->dyna.actor, this->timer);
+
+    Actor_PlaySfx_FlaggedTimer(&this->dyna.actor, this->timer);
     if (this->timer == 0) {
         this->actionFunc = BgYdanHasi_MoveWater;
     }
@@ -140,27 +142,28 @@ void BgYdanHasi_SetupThreeBlocks(BgYdanHasi* this, PlayState* play) {
         this->timer = 260;
         this->dyna.actor.draw = BgYdanHasi_Draw;
         this->actionFunc = BgYdanHasi_UpdateThreeBlocks;
-        OnePointCutscene_Init(play, 3040, 30, &this->dyna.actor, MAIN_CAM);
+        OnePointCutscene_Init(play, 3040, 30, &this->dyna.actor, CAM_ID_MAIN);
     }
 }
 
 void BgYdanHasi_UpdateThreeBlocks(BgYdanHasi* this, PlayState* play) {
-    if (this->timer != 0) {
+    if (GameInteractor_Should(VB_SWITCH_TIMER_TICK, this->timer != 0, this, &this->timer)) {
         this->timer--;
     }
+
     if (this->timer == 0) {
         if (Math_StepToF(&this->dyna.actor.world.pos.y, this->dyna.actor.home.pos.y, 3.0f) != 0) {
             Flags_UnsetSwitch(play, this->type);
             this->dyna.actor.draw = NULL;
             this->actionFunc = BgYdanHasi_SetupThreeBlocks;
         } else {
-            func_8002F948(&this->dyna.actor, NA_SE_EV_ELEVATOR_MOVE - SFX_FLAG);
+            Actor_PlaySfx_FlaggedCentered2(&this->dyna.actor, NA_SE_EV_ELEVATOR_MOVE - SFX_FLAG);
         }
     } else if (!Math_StepToF(&this->dyna.actor.world.pos.y, this->dyna.actor.home.pos.y + 120.0f, 3.0f)) {
-        func_8002F948(&this->dyna.actor, NA_SE_EV_ELEVATOR_MOVE - SFX_FLAG);
+        Actor_PlaySfx_FlaggedCentered2(&this->dyna.actor, NA_SE_EV_ELEVATOR_MOVE - SFX_FLAG);
 
     } else {
-        func_8002F994(&this->dyna.actor, this->timer);
+        Actor_PlaySfx_FlaggedTimer(&this->dyna.actor, this->timer);
     }
 }
 
@@ -181,11 +184,10 @@ void BgYdanHasi_Draw(Actor* thisx, PlayState* play) {
 
         Gfx_SetupDL_25Xlu(play->state.gfxCtx);
         gSPSegment(POLY_XLU_DISP++, 0x08,
-                   Gfx_TwoTexScroll(play->state.gfxCtx, 0, -play->gameplayFrames % 128,
-                                    play->gameplayFrames % 128, 0x20, 0x20, 1, play->gameplayFrames % 128,
-                                    play->gameplayFrames % 128, 0x20, 0x20));
-        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                  G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                   Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, -play->gameplayFrames % 128, play->gameplayFrames % 128,
+                                      0x20, 0x20, 1, play->gameplayFrames % 128, play->gameplayFrames % 128, 0x20, 0x20,
+                                      -1, 1, 1, 1));
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_XLU_DISP++, gDTWaterPlaneDL);
 
         CLOSE_DISPS(play->state.gfxCtx);

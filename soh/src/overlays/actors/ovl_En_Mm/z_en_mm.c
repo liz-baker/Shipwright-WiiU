@@ -8,7 +8,7 @@
 #include "objects/object_mm/object_mm.h"
 #include "objects/object_link_child/object_link_child.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_WHILE_CULLED)
+#define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
 typedef enum {
     /* 0 */ RM_ANIM_RUN,
@@ -198,8 +198,6 @@ void EnMm_Destroy(Actor* thisx, PlayState* play) {
     EnMm* this = (EnMm*)thisx;
 
     Collider_DestroyCylinder(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 s32 func_80AADA70(void) {
@@ -297,7 +295,7 @@ void func_80AADCD0(EnMm* this, PlayState* play) {
             if (this->curAnimIndex != 5) {
                 if ((this->actor.textId == 0x202A) || (this->actor.textId == 0x202B)) {
                     EnMm_ChangeAnim(this, RM_ANIM_EXCITED, &this->curAnimIndex);
-                    func_80078884(NA_SE_SY_TRE_BOX_APPEAR);
+                    Sfx_PlaySfxCentered(NA_SE_SY_TRE_BOX_APPEAR);
                 }
             }
         } else {
@@ -305,7 +303,7 @@ void func_80AADCD0(EnMm* this, PlayState* play) {
             yawDiff = ABS((s16)(this->actor.yawTowardsPlayer - this->actor.shape.rot.y));
 
             if ((sp26 >= 0) && (sp26 <= 0x140) && (sp24 >= 0) && (sp24 <= 0xF0) && (yawDiff <= 17152.0f) &&
-                (this->unk_1E0 != 3) && func_8002F2CC(&this->actor, play, 100.0f)) {
+                (this->unk_1E0 != 3) && Actor_OfferTalk(&this->actor, play, 100.0f)) {
                 this->actor.textId = EnMm_GetTextId(this, play);
             }
         }
@@ -391,7 +389,7 @@ s32 func_80AADEF0(EnMm* this, PlayState* play) {
     Math_SmoothStepToS(&this->actor.shape.rot.y, this->yawToWaypoint, 1, 2500, 0);
     this->actor.world.rot.y = this->actor.shape.rot.y;
     Math_SmoothStepToF(&this->actor.speedXZ, this->speedXZ, 0.6f, this->distToWaypoint, 0.0f);
-    Actor_MoveForward(&this->actor);
+    Actor_MoveXZGravity(&this->actor);
     Actor_UpdateBgCheckInfo(play, &this->actor, 0.0f, 0.0f, 0.0f, 4);
 
     return 0;
@@ -462,12 +460,12 @@ void func_80AAE294(EnMm* this, PlayState* play) {
             dustPos.y = this->actor.world.pos.y;
             dustPos.z = this->actor.world.pos.z;
 
-            if (gSaveContext.gameMode != 3) {
+            if (gSaveContext.gameMode != GAMEMODE_END_CREDITS) {
                 func_80033480(play, &dustPos, 50.0f, 2, 350, 20, 0);
             }
 
             if (this->collider.base.ocFlags2 & OC2_HIT_PLAYER) {
-                func_8002F71C(play, &this->actor, 3.0f, this->actor.yawTowardsPlayer, 4.0f);
+                Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 3.0f, this->actor.yawTowardsPlayer, 4.0f);
             }
         }
     }
@@ -491,7 +489,7 @@ void func_80AAE50C(EnMm* this, PlayState* play) {
 }
 
 void func_80AAE598(EnMm* this, PlayState* play) {
-    func_80038290(play, &this->actor, &this->unk_248, &this->unk_24E, this->actor.focus.pos);
+    Actor_TrackPlayer(play, &this->actor, &this->unk_248, &this->unk_24E, this->actor.focus.pos);
     SkelAnime_Update(&this->skelAnime);
 
     if ((func_80AADA70() != 0) && (this->unk_1E0 == 0)) {

@@ -1,7 +1,9 @@
 #include "global.h"
 #include "vt.h"
 
-#include <soh/OTRGlobals.h>
+#include "soh/OTRGlobals.h"
+#include "soh/ResourceManagerHelpers.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include <assert.h>
 
 #define SS_NULL 0xFFFF
@@ -27,9 +29,16 @@
 #define COLPOLY_IGNORE_ENTITY (1 << 1)
 #define COLPOLY_IGNORE_PROJECTILES (1 << 2)
 
-// func_80041DB8, SurfaceType wall properties
-s32 D_80119D90[32] = {
-    0, 1, 3, 5, 8, 16, 32, 64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+// SurfaceType_GetWallFlags, SurfaceType wall types
+s32 D_80119D90[WALL_TYPE_MAX] = {
+    0,                                  // WALL_TYPE_0
+    WALL_FLAG_0,                        // WALL_TYPE_1
+    WALL_FLAG_0 | WALL_FLAG_LADDER,     // WALL_TYPE_2
+    WALL_FLAG_0 | WALL_FLAG_LADDER_TOP, // WALL_TYPE_3
+    WALL_FLAG_CLIMBABLE,                // WALL_TYPE_4
+    WALL_FLAG_CRAWLSPACE_1,             // WALL_TYPE_5
+    WALL_FLAG_CRAWLSPACE_2,             // WALL_TYPE_6
+    WALL_FLAG_GRABBABLE,                // WALL_TYPE_7
 };
 
 // SurfaceType_GetSfx
@@ -397,16 +406,6 @@ s32 CollisionPoly_LineVsPoly(CollisionPoly* poly, Vec3s* vtxList, Vec3f* posA, V
     planeDistB =
         (poly->normal.x * posB->x + poly->normal.y * posB->y + poly->normal.z * posB->z) * COLPOLY_NORMAL_FRAC +
         plane.originDist;
-
-#if defined(__SWITCH__) || defined(__WIIU__)
-    // on some platforms this ends up as very small numbers due to rounding issues
-    if (IS_ZERO(planeDistA)) {
-        planeDistA = 0.0f;
-    }
-    if (IS_ZERO(planeDistB)) {
-        planeDistB = 0.0f;
-    }
-#endif
 
     planeDistDelta = planeDistA - planeDistB;
     if ((planeDistA >= 0.0f && planeDistB >= 0.0f) || (planeDistA < 0.0f && planeDistB < 0.0f) ||
@@ -1598,10 +1597,10 @@ void BgCheck_Allocate(CollisionContext* colCtx, PlayState* play, CollisionHeader
     BgCheck_SetSubdivisionDimension(colCtx->minBounds.z, colCtx->subdivAmount.z, &colCtx->maxBounds.z,
                                     &colCtx->subdivLength.z, &colCtx->subdivLengthInv.z);
 
-// OTRTODO: Re-enable when the below DynaPoly workaround is removed.
-// #ifdef _SOH64 // BGCheck needs more memory on 64 bits because it crashes on some areas
-//     colCtx->memSize *= 2;
-// #endif
+    // OTRTODO: Re-enable when the below DynaPoly workaround is removed.
+    // #ifdef _SOH64 // BGCheck needs more memory on 64 bits because it crashes on some areas
+    //     colCtx->memSize *= 2;
+    // #endif
 
     // BGCheck needs a higher polygon and vertex count due to removed object dependencies.
     // Otherwise Forest Temple checkered room will crash due to the hallway actor being killed a frame late.
@@ -1764,8 +1763,7 @@ f32 BgCheck_EntityRaycastFloor1(CollisionContext* colCtx, CollisionPoly** outPol
  * Public raycast toward floor
  * returns yIntersect of the poly found, or BGCHECK_Y_MIN if no poly detected
  */
-f32 BgCheck_EntityRaycastFloor2(PlayState* play, CollisionContext* colCtx, CollisionPoly** outPoly,
-                                Vec3f* pos) {
+f32 BgCheck_EntityRaycastFloor2(PlayState* play, CollisionContext* colCtx, CollisionPoly** outPoly, Vec3f* pos) {
     s32 bgId;
 
     return BgCheck_RaycastFloorImpl(play, colCtx, COLPOLY_IGNORE_ENTITY, outPoly, &bgId, pos, NULL, 0x1C, 1.0f);
@@ -1902,7 +1900,7 @@ s32 BgCheck_CheckWallImpl(CollisionContext* colCtx, u16 xpFlags, Vec3f* posResul
     s32 bgId2;
     f32 nx, ny, nz; // unit normal of polygon
 
-    if (CVarGetInteger(CVAR_CHEAT("NoClip"), 0) && actor != NULL && actor->id == ACTOR_PLAYER) {
+    if (!GameInteractor_Should(VB_PERFORM_WALL_COLLISION_CHECK, true, actor)) {
         return false;
     }
 
@@ -1915,8 +1913,7 @@ s32 BgCheck_CheckWallImpl(CollisionContext* colCtx, u16 xpFlags, Vec3f* posResul
     dy = posNext->y - posPrev->y;
     dz = posNext->z - posPrev->z;
 
-    if (BGCHECK_POS_ERROR_CHECK(posNext) == true ||
-        BGCHECK_POS_ERROR_CHECK(posPrev) == true) {
+    if (BGCHECK_POS_ERROR_CHECK(posNext) == true || BGCHECK_POS_ERROR_CHECK(posPrev) == true) {
         if (actor != NULL) {
             osSyncPrintf("こいつ,pself_actor->name %d\n", actor->id);
         }
@@ -2178,8 +2175,7 @@ s32 BgCheck_CheckLineImpl(CollisionContext* colCtx, u16 xpFlags1, u16 xpFlags2, 
     s32 temp_lo;
 
     *outBgId = BGCHECK_SCENE;
-    if (BGCHECK_POS_ERROR_CHECK(posA) == true ||
-        BGCHECK_POS_ERROR_CHECK(posB) == true) {
+    if (BGCHECK_POS_ERROR_CHECK(posA) == true || BGCHECK_POS_ERROR_CHECK(posB) == true) {
         if (actor != NULL) {
             osSyncPrintf("こいつ,pself_actor->name %d\n", actor->id);
         } else {
@@ -2652,8 +2648,7 @@ void DynaPoly_Alloc(PlayState* play, DynaCollisionContext* dyna) {
  * Set BgActor
  * original name: DynaPolyInfo_setActor
  */
-s32 DynaPoly_SetBgActor(PlayState* play, DynaCollisionContext* dyna, Actor* actor,
-                        CollisionHeader* colHeader) {
+s32 DynaPoly_SetBgActor(PlayState* play, DynaCollisionContext* dyna, Actor* actor, CollisionHeader* colHeader) {
     s32 bgId;
     s32 foundSlot = false;
 
@@ -2953,7 +2948,7 @@ void func_8003F8EC(PlayState* play, DynaCollisionContext* dyna, Actor* actor) {
         if ((dyna->bgActorFlags[i] & 1)) {
             dynaActor = DynaPoly_GetActor(&play->colCtx, i);
             if (dynaActor != NULL && &dynaActor->actor == actor) {
-                func_800434A0((DynaPolyActor*)actor);
+                DynaPolyActor_UnsetAllInteractFlags((DynaPolyActor*)actor);
                 return;
             }
         }
@@ -3812,8 +3807,7 @@ void CollisionHeader_SegmentedToVirtual(CollisionHeader* colHeader) {
 /**
  * Convert CollisionHeader Segmented to Virtual addressing
  */
-void CollisionHeader_GetVirtual(void* colHeader, CollisionHeader** dest)
-{
+void CollisionHeader_GetVirtual(void* colHeader, CollisionHeader** dest) {
     if (ResourceMgr_OTRSigCheck(colHeader))
         colHeader = ResourceMgr_LoadColByName(colHeader);
 
@@ -3871,25 +3865,26 @@ u32 SurfaceType_GetData(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId,
  * SurfaceType return CamData Index
  */
 u32 SurfaceType_GetCamDataIndex(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) {
-
     return SurfaceType_GetData(colCtx, poly, bgId, 0) & 0xFF;
 }
 
 /**
- * CamData return cameraSType
+ * BgCam get setting of bgCam
  */
-u16 func_80041A4C(CollisionContext* colCtx, u32 camId, s32 bgId) {
-    u16 result;
+u16 BgCheck_GetBgCamSettingImpl(CollisionContext* colCtx, u32 bgCamIndex, s32 bgId) {
+    u16 camSetting;
     CollisionHeader* colHeader;
-    CamData* camData;
+    CamData* bgCamList;
 
     colHeader = BgCheck_GetCollisionHeader(colCtx, bgId);
     if (colHeader == NULL) {
-        return 0;
+        return CAM_SET_NONE;
     }
-    camData = colHeader->cameraDataList;
-    result = camData[camId].cameraSType;
-    return result;
+
+    bgCamList = colHeader->cameraDataList;
+    camSetting = bgCamList[bgCamIndex].cameraSType;
+
+    return camSetting;
 }
 
 /**
@@ -3911,7 +3906,7 @@ u16 SurfaceType_GetCameraSType(CollisionContext* colCtx, CollisionPoly* poly, s3
     if (surfaceTypes == PHYSICAL_TO_VIRTUAL(gSegments[0])) {
         return 0;
     }
-    return func_80041A4C(colCtx, SurfaceType_GetCamDataIndex(colCtx, poly, bgId), bgId);
+    return BgCheck_GetBgCamSettingImpl(colCtx, SurfaceType_GetCamDataIndex(colCtx, poly, bgId), bgId);
 }
 
 /**
@@ -3957,18 +3952,20 @@ u16 SurfaceType_GetNumCameras(CollisionContext* colCtx, CollisionPoly* poly, s32
 /**
  * CamData Get camPosData
  */
-Vec3s* func_80041C10(CollisionContext* colCtx, s32 camId, s32 bgId) {
+Vec3s* BgCheck_GetBgCamFuncDataImpl(CollisionContext* colCtx, s32 bgCamIndex, s32 bgId) {
     CollisionHeader* colHeader = BgCheck_GetCollisionHeader(colCtx, bgId);
-    CamData* cameraDataList;
+    CamData* bgCamList;
 
     if (colHeader == NULL) {
         return NULL;
     }
-    cameraDataList = colHeader->cameraDataList;
-    if (cameraDataList == PHYSICAL_TO_VIRTUAL(gSegments[0])) {
+
+    bgCamList = colHeader->cameraDataList;
+    if (bgCamList == PHYSICAL_TO_VIRTUAL(gSegments[0])) {
         return NULL;
     }
-    return (Vec3s*)SEGMENTED_TO_VIRTUAL(cameraDataList[camId].camPosData);
+
+    return (Vec3s*)SEGMENTED_TO_VIRTUAL(bgCamList[bgCamIndex].camPosData);
 }
 
 /**
@@ -3990,7 +3987,7 @@ Vec3s* SurfaceType_GetCamPosData(CollisionContext* colCtx, CollisionPoly* poly, 
     if (surfaceTypes == PHYSICAL_TO_VIRTUAL(gSegments[0])) {
         return NULL;
     }
-    return func_80041C10(colCtx, SurfaceType_GetCamDataIndex(colCtx, poly, bgId), bgId);
+    return BgCheck_GetBgCamFuncDataImpl(colCtx, SurfaceType_GetCamDataIndex(colCtx, poly, bgId), bgId);
 }
 
 /**
@@ -4003,7 +4000,7 @@ u32 SurfaceType_GetSceneExitIndex(CollisionContext* colCtx, CollisionPoly* poly,
 /**
  * SurfaceType Get ? Property (& 0x0003 E000)
  */
-u32 func_80041D4C(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) {
+u32 SurfaceType_GetFloorType(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) {
     return SurfaceType_GetData(colCtx, poly, bgId, 0) >> 13 & 0x1F;
 }
 
@@ -4015,7 +4012,7 @@ u32 func_80041D70(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) {
 }
 
 /**
- * SurfaceType Get Wall Property (Internal)
+ * SurfaceType Get Wall Type (Internal)
  */
 u32 func_80041D94(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) {
     return SurfaceType_GetData(colCtx, poly, bgId, 0) >> 21 & 0x1F;
@@ -4024,9 +4021,9 @@ u32 func_80041D94(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) {
 /**
  * SurfaceType Get Wall Flags
  */
-s32 func_80041DB8(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) {
-    if (CVarGetInteger(CVAR_CHEAT("ClimbEverything"), 0) != 0) {
-        return (1 << 3) | D_80119D90[func_80041D94(colCtx, poly, bgId)];
+s32 SurfaceType_GetWallFlags(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) {
+    if (GameInteractor_Should(VB_SURFACE_IS_CLIMBABLE, false)) {
+        return WALL_FLAG_CLIMBABLE | D_80119D90[func_80041D94(colCtx, poly, bgId)];
     } else {
         return D_80119D90[func_80041D94(colCtx, poly, bgId)];
     }
@@ -4036,21 +4033,21 @@ s32 func_80041DB8(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) {
  * SurfaceType Is Wall Flag (1 << 0) Set
  */
 s32 func_80041DE4(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) {
-    return (func_80041DB8(colCtx, poly, bgId) & 1) ? true : false;
+    return (SurfaceType_GetWallFlags(colCtx, poly, bgId) & WALL_FLAG_0) ? true : false;
 }
 
 /**
  * SurfaceType Is Wall Flag (1 << 1) Set
  */
 s32 func_80041E18(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) {
-    return (func_80041DB8(colCtx, poly, bgId) & 2) ? true : false;
+    return (SurfaceType_GetWallFlags(colCtx, poly, bgId) & WALL_FLAG_LADDER) ? true : false;
 }
 
 /**
  * SurfaceType Is Wall Flag (1 << 2) Set
  */
 s32 func_80041E4C(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) {
-    return (func_80041DB8(colCtx, poly, bgId) & 4) ? true : false;
+    return (SurfaceType_GetWallFlags(colCtx, poly, bgId) & WALL_FLAG_LADDER_TOP) ? true : false;
 }
 
 /**
@@ -4098,9 +4095,9 @@ u16 SurfaceType_GetSfx(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) 
 }
 
 /**
- * SurfaceType get terrain slope surface
+ * SurfaceType get terrain slope surface or transition
  */
-u32 SurfaceType_GetSlope(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) {
+u32 SurfaceType_GetFloorEffect(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) {
     return SurfaceType_GetData(colCtx, poly, bgId, 1) >> 4 & 3;
 }
 
@@ -4122,7 +4119,7 @@ u32 SurfaceType_GetEcho(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId)
  * SurfaceType Is Hookshot Surface
  */
 u32 SurfaceType_IsHookshotSurface(CollisionContext* colCtx, CollisionPoly* poly, s32 bgId) {
-    return CVarGetInteger(CVAR_CHEAT("HookshotEverything"), 0) || SurfaceType_GetData(colCtx, poly, bgId, 1) >> 17 & 1;
+    return GameInteractor_Should(VB_SURFACE_IS_HOOKSHOT, SurfaceType_GetData(colCtx, poly, bgId, 1) >> 17 & 1);
 }
 
 /**
@@ -4338,8 +4335,7 @@ u32 WaterBox_GetLightSettingIndex(CollisionContext* colCtx, WaterBox* waterBox) 
  * returns true if point is within the xz boundaries of an active water box, else false
  * `ySurface` returns the water box's surface, while `outWaterBox` returns a pointer to the WaterBox
  */
-s32 func_800425B0(PlayState* play, CollisionContext* colCtx, f32 x, f32 z, f32* ySurface,
-                  WaterBox** outWaterBox) {
+s32 func_800425B0(PlayState* play, CollisionContext* colCtx, f32 x, f32 z, f32* ySurface, WaterBox** outWaterBox) {
     CollisionHeader* colHeader = colCtx->colHeader;
     u32 room;
     WaterBox* curWaterBox;
@@ -4407,8 +4403,8 @@ s32 func_800427B4(CollisionPoly* polyA, CollisionPoly* polyB, Vec3f* pointA, Vec
 /**
  * Draw a list of dyna polys, specified by `ssList`
  */
-void BgCheck_DrawDynaPolyList(PlayState* play, CollisionContext* colCtx, DynaCollisionContext* dyna,
-                              SSList* ssList, u8 r, u8 g, u8 b) {
+void BgCheck_DrawDynaPolyList(PlayState* play, CollisionContext* colCtx, DynaCollisionContext* dyna, SSList* ssList,
+                              u8 r, u8 g, u8 b) {
     s16 curPolyId;
     CollisionPoly* poly;
     SSNode* curNode;
@@ -4456,16 +4452,14 @@ void BgCheck_DrawDynaPolyList(PlayState* play, CollisionContext* colCtx, DynaCol
  */
 void BgCheck_DrawBgActor(PlayState* play, CollisionContext* colCtx, s32 bgId) {
     if (AREG(21)) {
-        BgCheck_DrawDynaPolyList(play, colCtx, &colCtx->dyna, &colCtx->dyna.bgActors[bgId].dynaLookup.ceiling, 255,
-                                 0, 0);
-    }
-    if (AREG(22)) {
-        BgCheck_DrawDynaPolyList(play, colCtx, &colCtx->dyna, &colCtx->dyna.bgActors[bgId].dynaLookup.wall, 0, 255,
+        BgCheck_DrawDynaPolyList(play, colCtx, &colCtx->dyna, &colCtx->dyna.bgActors[bgId].dynaLookup.ceiling, 255, 0,
                                  0);
     }
+    if (AREG(22)) {
+        BgCheck_DrawDynaPolyList(play, colCtx, &colCtx->dyna, &colCtx->dyna.bgActors[bgId].dynaLookup.wall, 0, 255, 0);
+    }
     if (AREG(23)) {
-        BgCheck_DrawDynaPolyList(play, colCtx, &colCtx->dyna, &colCtx->dyna.bgActors[bgId].dynaLookup.floor, 0, 0,
-                                 255);
+        BgCheck_DrawDynaPolyList(play, colCtx, &colCtx->dyna, &colCtx->dyna.bgActors[bgId].dynaLookup.floor, 0, 0, 255);
     }
 }
 

@@ -10,7 +10,9 @@
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "soh/frame_interpolation.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_WHILE_CULLED | ACTOR_FLAG_HOOKSHOT_DRAGS)
+#define FLAGS                                                                                 \
+    (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
+     ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR)
 
 void EnFw_Init(Actor* thisx, PlayState* play);
 void EnFw_Destroy(Actor* thisx, PlayState* play);
@@ -82,7 +84,7 @@ static AnimationInfo sAnimationInfo[] = {
 s32 EnFw_DoBounce(EnFw* this, s32 totalBounces, f32 yVelocity) {
     s16 temp_v1;
 
-    if (!(this->actor.bgCheckFlags & 1) || (this->actor.velocity.y > 0.0f)) {
+    if (!(this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) || (this->actor.velocity.y > 0.0f)) {
         // not on the ground or moving upwards.
         return false;
     }
@@ -116,8 +118,8 @@ s32 EnFw_PlayerInRange(EnFw* this, PlayState* play) {
         return false;
     }
 
-    if (BgCheck_EntityLineTest1(&play->colCtx, &this->actor.world.pos, &player->actor.world.pos, &collisionPos,
-                                &poly, true, false, false, true, &bgId)) {
+    if (BgCheck_EntityLineTest1(&play->colCtx, &this->actor.world.pos, &player->actor.world.pos, &collisionPos, &poly,
+                                true, false, false, true, &bgId)) {
         return false;
     }
 
@@ -192,8 +194,7 @@ s32 EnFw_SpawnDust(EnFw* this, u8 timer, f32 scale, f32 scaleStep, s32 dustCnt, 
 void EnFw_Init(Actor* thisx, PlayState* play) {
     EnFw* this = (EnFw*)thisx;
 
-    SkelAnime_InitFlex(play, &this->skelAnime, &gFlareDancerCoreSkel, NULL, this->jointTable, this->morphTable,
-                       11);
+    SkelAnime_InitFlex(play, &this->skelAnime, &gFlareDancerCoreSkel, NULL, this->jointTable, this->morphTable, 11);
     Animation_ChangeByInfo(&this->skelAnime, sAnimationInfo, ENFW_ANIM_0);
     ActorShape_Init(&this->actor.shape, 0.0f, ActorShadow_DrawCircle, 20.0f);
     Collider_InitJntSph(play, &this->collider);
@@ -208,8 +209,6 @@ void EnFw_Init(Actor* thisx, PlayState* play) {
 void EnFw_Destroy(Actor* thisx, PlayState* play) {
     EnFw* this = (EnFw*)thisx;
     Collider_DestroyJntSph(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void EnFw_Bounce(EnFw* this, PlayState* play) {
@@ -260,7 +259,7 @@ void EnFw_Run(EnFw* this, PlayState* play) {
 
         if (this->explosionTimer == 0) {
             bomb = (EnBom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, this->bompPos.x, this->bompPos.y,
-                                       this->bompPos.z, 0, 0, 0x600, 0, true);
+                                       this->bompPos.z, 0, 0, 0x600, 0);
             if (bomb != NULL) {
                 bomb->timer = 0;
             }
@@ -271,7 +270,7 @@ void EnFw_Run(EnFw* this, PlayState* play) {
             return;
         }
     } else {
-        if (!(this->actor.bgCheckFlags & 1) || this->actor.velocity.y > 0.0f) {
+        if (!(this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) || this->actor.velocity.y > 0.0f) {
             Actor_SetColorFilter(&this->actor, 0x4000, 0xC8, 0, this->damageTimer);
             return;
         }
@@ -366,7 +365,7 @@ void EnFw_Update(Actor* thisx, PlayState* play) {
     SkelAnime_Update(&this->skelAnime);
     if (!CHECK_FLAG_ALL(this->actor.flags, ACTOR_FLAG_HOOKSHOT_ATTACHED)) {
         // not attached to hookshot.
-        Actor_MoveForward(&this->actor);
+        Actor_MoveXZGravity(&this->actor);
         Actor_UpdateBgCheckInfo(play, &this->actor, 10.0f, 20.0f, 0.0f, 5);
         this->actionFunc(this, play);
         if (this->damageTimer == 0 && this->explosionTimer == 0 && this->actionFunc == EnFw_Run) {
@@ -376,8 +375,7 @@ void EnFw_Update(Actor* thisx, PlayState* play) {
     }
 }
 
-s32 EnFw_OverrideLimbDraw(PlayState* playState, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
-                          void* thisx) {
+s32 EnFw_OverrideLimbDraw(PlayState* playState, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
     return false;
 }
 
@@ -483,8 +481,7 @@ void EnFw_DrawDust(EnFw* this, PlayState* play) {
             Matrix_Translate(eff->pos.x, eff->pos.y, eff->pos.z, MTXMODE_NEW);
             Matrix_ReplaceRotation(&play->billboardMtxF);
             Matrix_Scale(eff->scale, eff->scale, 1.0f, MTXMODE_APPLY);
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                      G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
             idx = eff->timer * (8.0f / eff->initialTimer);
             gSPSegment(POLY_XLU_DISP++, 0x8, SEGMENTED_TO_VIRTUAL(dustTextures[idx]));
             gSPDisplayList(POLY_XLU_DISP++, gFlareDancerSquareParticleDL);

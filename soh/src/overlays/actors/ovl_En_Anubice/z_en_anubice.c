@@ -11,7 +11,7 @@
 #include "vt.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_WHILE_CULLED)
+#define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
 void EnAnubice_Init(Actor* thisx, PlayState* play);
 void EnAnubice_Destroy(Actor* thisx, PlayState* play);
@@ -148,7 +148,7 @@ void EnAnubice_Init(Actor* thisx, PlayState* play) {
     this->actor.colChkInfo.mass = MASS_IMMOVABLE;
     this->actor.shape.yOffset = -4230.0f;
     this->focusHeightOffset = 0.0f;
-    this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+    this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
     this->home = this->actor.world.pos;
     this->actor.targetMode = 3;
     this->actionFunc = EnAnubice_FindFlameCircles;
@@ -168,8 +168,6 @@ void EnAnubice_Destroy(Actor* thisx, PlayState* play) {
             tag->anubis = NULL;
         }
     }
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void EnAnubice_FindFlameCircles(EnAnubice* this, PlayState* play) {
@@ -197,7 +195,7 @@ void EnAnubice_FindFlameCircles(EnAnubice* this, PlayState* play) {
             }
             this->hasSearchedForFlameCircles = true;
         }
-        this->actor.flags |= ACTOR_FLAG_TARGETABLE;
+        this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
         this->actionFunc = EnAnubice_SetupIdle;
     }
 }
@@ -288,8 +286,8 @@ void EnAnubice_ShootFireball(EnAnubice* this, PlayState* play) {
     EnAnubice_SetFireballRot(this, play);
 
     if (curFrame == 12.0f) {
-        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_ANUBICE_FIRE, this->fireballPos.x,
-                    this->fireballPos.y + 15.0f, this->fireballPos.z, this->fireballRot.x, this->fireballRot.y, 0, 0, true);
+        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_ANUBICE_FIRE, this->fireballPos.x, this->fireballPos.y + 15.0f,
+                    this->fireballPos.z, this->fireballRot.x, this->fireballRot.y, 0, 0);
     }
 
     if (this->animLastFrame <= curFrame) {
@@ -349,7 +347,7 @@ void EnAnubice_Die(EnAnubice* this, PlayState* play) {
     Actor_SetColorFilter(&this->actor, 0x4000, 128, 0, 8);
     EffectSsEnFire_SpawnVec3f(play, &this->actor, &fireEffectPos, 100, 0, 0, -1);
 
-    if ((this->animLastFrame <= curFrame) && (this->actor.bgCheckFlags & 1)) {
+    if ((this->animLastFrame <= curFrame) && (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
         Math_ApproachF(&this->actor.shape.yOffset, -4230.0f, 0.5f, 300.0f);
         if (this->actor.shape.yOffset < -2000.0f) {
             Item_DropCollectibleRandom(play, &this->actor, &this->actor.world.pos, 0xC0);
@@ -376,7 +374,7 @@ void EnAnubice_Update(Actor* thisx, PlayState* play) {
                 (fabsf(this->flameCircles[i]->actor.world.pos.z - this->actor.world.pos.z) < 60.0f) &&
                 (flameCircle->timer != 0)) {
                 Actor_ChangeCategory(play, &play->actorCtx, &this->actor, ACTORCAT_PROP);
-                this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+                this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
                 Enemy_StartFinishingBlow(play, &this->actor);
                 Audio_PlayActorSound2(&this->actor, NA_SE_EN_ANUBIS_DEAD);
                 this->actionFunc = EnAnubice_SetupDie;
@@ -388,7 +386,7 @@ void EnAnubice_Update(Actor* thisx, PlayState* play) {
             this->collider.base.acFlags &= ~AC_HIT;
             if (this->actor.colChkInfo.damageEffect == ANUBICE_DMGEFF_FIRE) {
                 Actor_ChangeCategory(play, &play->actorCtx, &this->actor, ACTORCAT_PROP);
-                this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+                this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
                 Enemy_StartFinishingBlow(play, &this->actor);
                 Audio_PlayActorSound2(&this->actor, NA_SE_EN_ANUBIS_DEAD);
                 this->actionFunc = EnAnubice_SetupDie;
@@ -447,7 +445,7 @@ void EnAnubice_Update(Actor* thisx, PlayState* play) {
     this->actionFunc(this, play);
 
     this->actor.velocity.y += this->actor.gravity;
-    func_8002D7EC(&this->actor);
+    Actor_UpdatePos(&this->actor);
 
     if (!this->isLinkOutOfRange) {
         Actor_UpdateBgCheckInfo(play, &this->actor, 5.0f, 5.0f, 10.0f, 0x1D);
@@ -466,8 +464,7 @@ void EnAnubice_Update(Actor* thisx, PlayState* play) {
     }
 }
 
-s32 EnAnubice_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
-                               void* thisx) {
+s32 EnAnubice_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
     EnAnubice* this = (EnAnubice*)thisx;
 
     if (limbIndex == ANUBICE_LIMB_HEAD) {
@@ -484,8 +481,7 @@ void EnAnubice_PostLimbDraw(struct PlayState* play, s32 limbIndex, Gfx** dList, 
     if (limbIndex == ANUBICE_LIMB_HEAD) {
         OPEN_DISPS(play->state.gfxCtx);
 
-        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                  G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_XLU_DISP++, gAnubiceEyesDL);
         Matrix_MultVec3f(&pos, &this->fireballPos);
 
@@ -497,6 +493,5 @@ void EnAnubice_Draw(Actor* thisx, PlayState* play) {
     EnAnubice* this = (EnAnubice*)thisx;
 
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);
-    SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, EnAnubice_OverrideLimbDraw,
-                      EnAnubice_PostLimbDraw, this);
+    SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, EnAnubice_OverrideLimbDraw, EnAnubice_PostLimbDraw, this);
 }

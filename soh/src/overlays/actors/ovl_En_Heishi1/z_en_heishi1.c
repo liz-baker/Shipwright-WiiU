@@ -7,8 +7,10 @@
 #include "z_en_heishi1.h"
 #include "objects/object_sd/object_sd.h"
 #include "vt.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/savestate_serialize.h"
 
-#define FLAGS ACTOR_FLAG_UPDATE_WHILE_CULLED
+#define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
 void EnHeishi1_Init(Actor* thisx, PlayState* play);
 void EnHeishi1_Destroy(Actor* thisx, PlayState* play);
@@ -30,7 +32,11 @@ void EnHeishi1_TurnTowardLink(EnHeishi1* this, PlayState* play);
 void EnHeishi1_Kick(EnHeishi1* this, PlayState* play);
 void EnHeishi1_WaitNight(EnHeishi1* this, PlayState* play);
 
-s32 sHeishi1PlayerIsCaught = false;
+static s32 sPlayerIsCaught = false;
+
+#define EN_HEISHI1_SHIP_SAVESTATE_FIELDS(F) F(sPlayerIsCaught)
+
+SHIP_SAVESTATE_DEFINE(EnHeishi1, EN_HEISHI1_SHIP_SAVESTATE_FIELDS)
 
 const ActorInit En_Heishi1_InitVars = {
     ACTOR_EN_HEISHI1,
@@ -66,7 +72,7 @@ static s32 sCamDataIdxs[] = {
 static s16 sWaypoints[] = { 0, 4, 1, 5, 2, 6, 3, 7 };
 
 void EnHeishi1_Reset(void) {
-    sHeishi1PlayerIsCaught = false;
+    sPlayerIsCaught = false;
 }
 
 void EnHeishi1_Init(Actor* thisx, PlayState* play) {
@@ -76,8 +82,7 @@ void EnHeishi1_Init(Actor* thisx, PlayState* play) {
     s32 i;
 
     Actor_SetScale(&this->actor, 0.01f);
-    SkelAnime_Init(play, &this->skelAnime, &gEnHeishiSkel, &gEnHeishiIdleAnim, this->jointTable, this->morphTable,
-                   17);
+    SkelAnime_Init(play, &this->skelAnime, &gEnHeishiSkel, &gEnHeishiIdleAnim, this->jointTable, this->morphTable, 17);
 
     this->type = (this->actor.params >> 8) & 0xFF;
     this->path = this->actor.params & 0xFF;
@@ -120,20 +125,25 @@ void EnHeishi1_Init(Actor* thisx, PlayState* play) {
     // eventChkInf[4] & 1 = Got Zelda's Letter
     // eventChkInf[5] & 0x200 = Got item from impa
     // eventChkInf[8] & 1 = Ocarina thrown in moat
-    bool metZelda = (Flags_GetEventChkInf(EVENTCHKINF_OBTAINED_ZELDAS_LETTER)) && (Flags_GetEventChkInf(EVENTCHKINF_LEARNED_ZELDAS_LULLABY));
+    bool metZelda = (Flags_GetEventChkInf(EVENTCHKINF_OBTAINED_ZELDAS_LETTER)) &&
+                    (Flags_GetEventChkInf(EVENTCHKINF_LEARNED_ZELDAS_LULLABY));
 
     if (this->type != 5) {
-        if ((gSaveContext.dayTime < 0xB888 || IS_DAY) &&
-            ((!IS_RANDO && !Flags_GetEventChkInf(EVENTCHKINF_ZELDA_FLED_HYRULE_CASTLE)) ||
-             (IS_RANDO && !metZelda))) {
+        if (GameInteractor_Should(VB_WONDER_HEISHI_PATROLLING,
+                                  (gSaveContext.dayTime < 0xB888 || IS_DAY) &&
+                                      ((!IS_RANDO && !Flags_GetEventChkInf(EVENTCHKINF_ZELDA_FLED_HYRULE_CASTLE)) ||
+                                       (IS_RANDO && !metZelda)),
+                                  this)) {
             this->actionFunc = EnHeishi1_SetupWalk;
         } else {
             Actor_Kill(&this->actor);
         }
     } else {
-        if ((gSaveContext.dayTime >= 0xB889) || !IS_DAY ||
-            (!IS_RANDO && Flags_GetEventChkInf(EVENTCHKINF_ZELDA_FLED_HYRULE_CASTLE)) || 
-            (IS_RANDO && metZelda)) {
+        if (GameInteractor_Should(VB_WONDER_HEISHI_PATROLLING,
+                                  (gSaveContext.dayTime >= 0xB889) || !IS_DAY ||
+                                      (!IS_RANDO && Flags_GetEventChkInf(EVENTCHKINF_ZELDA_FLED_HYRULE_CASTLE)) ||
+                                      (IS_RANDO && metZelda),
+                                  this)) {
             this->actionFunc = EnHeishi1_SetupWaitNight;
         } else {
             Actor_Kill(&this->actor);
@@ -142,9 +152,6 @@ void EnHeishi1_Init(Actor* thisx, PlayState* play) {
 }
 
 void EnHeishi1_Destroy(Actor* thisx, PlayState* play) {
-    EnHeishi1* this = (EnHeishi1*)thisx;
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void EnHeishi1_SetupWalk(EnHeishi1* this, PlayState* play) {
@@ -171,7 +178,7 @@ void EnHeishi1_Walk(EnHeishi1* this, PlayState* play) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EV_KNIGHT_WALK);
     }
 
-    if (!sHeishi1PlayerIsCaught) {
+    if (!sPlayerIsCaught) {
         path = &play->setupPathList[this->path];
         pointPos = SEGMENTED_TO_VIRTUAL(path->points);
         pointPos += this->waypoint;
@@ -276,7 +283,7 @@ void EnHeishi1_Wait(EnHeishi1* this, PlayState* play) {
     s32 i;
 
     SkelAnime_Update(&this->skelAnime);
-    if (!sHeishi1PlayerIsCaught) {
+    if (!sPlayerIsCaught) {
         switch (this->headBehaviorDecided) {
             case false:
                 this->headDirection++;
@@ -369,7 +376,7 @@ void EnHeishi1_Kick(EnHeishi1* this, PlayState* play) {
                 play->nextEntranceIndex = ENTR_HYRULE_CASTLE_3;
                 play->transitionTrigger = TRANS_TRIGGER_START;
                 this->loadStarted = true;
-                sHeishi1PlayerIsCaught = false;
+                sPlayerIsCaught = false;
                 play->transitionType = TRANS_TYPE_CIRCLE(TCA_STARBURST, TCC_WHITE, TCS_FAST);
                 gSaveContext.nextTransitionType = TRANS_TYPE_CIRCLE(TCA_STARBURST, TCC_WHITE, TCS_FAST);
             }
@@ -389,9 +396,9 @@ void EnHeishi1_WaitNight(EnHeishi1* this, PlayState* play) {
 
     if (this->actor.xzDistToPlayer < 100.0f) {
         Message_StartTextbox(play, 0x702D, &this->actor);
-        func_80078884(NA_SE_SY_FOUND);
+        Sfx_PlaySfxCentered(NA_SE_SY_FOUND);
         osSyncPrintf(VT_FGCOL(GREEN) "☆☆☆☆☆ 発見！ ☆☆☆☆☆ \n" VT_RST); // "Discovered!"
-        func_8002DF54(play, &this->actor, 1);
+        Player_SetCsActionWithHaltedActors(play, &this->actor, 1);
         this->actionFunc = EnHeishi1_SetupKick;
     }
 }
@@ -430,7 +437,7 @@ void EnHeishi1_Update(Actor* thisx, PlayState* play) {
         if (this->type != 5) {
             path = this->path * 2;
             if ((sCamDataIdxs[path] == activeCam->camDataIdx) || (sCamDataIdxs[path + 1] == activeCam->camDataIdx)) {
-                if (!sHeishi1PlayerIsCaught) {
+                if (!sPlayerIsCaught) {
                     if ((this->actionFunc == EnHeishi1_Walk) || (this->actionFunc == EnHeishi1_Wait)) {
                         Vec3f searchBallVel;
                         Vec3f searchBallAccel = { 0.0f, 0.0f, 0.0f };
@@ -472,11 +479,11 @@ void EnHeishi1_Update(Actor* thisx, PlayState* play) {
                                 this->linkDetected = false;
                                 // this 60 unit height check is so the player doesnt get caught when on the upper path
                                 if (fabsf(player->actor.world.pos.y - this->actor.world.pos.y) < 60.0f) {
-                                    func_80078884(NA_SE_SY_FOUND);
+                                    Sfx_PlaySfxCentered(NA_SE_SY_FOUND);
                                     // "Discovered!"
                                     osSyncPrintf(VT_FGCOL(GREEN) "☆☆☆☆☆ 発見！ ☆☆☆☆☆ \n" VT_RST);
-                                    func_8002DF54(play, &this->actor, 1);
-                                    sHeishi1PlayerIsCaught = true;
+                                    Player_SetCsActionWithHaltedActors(play, &this->actor, 1);
+                                    sPlayerIsCaught = true;
                                     this->actionFunc = EnHeishi1_SetupMoveToLink;
                                 }
                             }
@@ -488,8 +495,7 @@ void EnHeishi1_Update(Actor* thisx, PlayState* play) {
     }
 }
 
-s32 EnHeishi1_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
-                               void* thisx) {
+s32 EnHeishi1_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
     EnHeishi1* this = (EnHeishi1*)thisx;
 
     // turn the guards head to match the direction he is looking
@@ -506,9 +512,7 @@ void EnHeishi1_Draw(Actor* thisx, PlayState* play) {
     Vec3f matrixScale = { 0.3f, 0.3f, 0.3f };
 
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, EnHeishi1_OverrideLimbDraw,
-                              NULL,
-                      this);
+    SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, EnHeishi1_OverrideLimbDraw, NULL, this);
     func_80033C30(&this->actor.world.pos, &matrixScale, 0xFF, play);
 
     if ((this->path == BREG(1)) && (BREG(0) != 0)) {

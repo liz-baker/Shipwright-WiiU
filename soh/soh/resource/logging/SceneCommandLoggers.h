@@ -1,5 +1,7 @@
-#include "Resource.h"
-#include "soh/OTRGlobals.h"
+#pragma once
+
+#include <ship/resource/Resource.h>
+#include "soh/cvar_prefixes.h"
 
 namespace SOH {
 
@@ -29,4 +31,4 @@ void LogTimeSettingsAsXML(std::shared_ptr<Ship::IResource> resource);
 void LogTransitionActorListAsXML(std::shared_ptr<Ship::IResource> resource);
 void LogWindSettingsAsXML(std::shared_ptr<Ship::IResource> resource);
 
-} //namespace SOH
+} // namespace SOH

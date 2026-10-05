@@ -12,9 +12,11 @@
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "objects/object_tsubo/object_tsubo.h"
 #include "objects/object_gi_rupy/object_gi_rupy.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/frame_interpolation.h"
+#include <libultraship/bridge/consolevariablebridge.h>
 
-#define FLAGS (ACTOR_FLAG_UPDATE_WHILE_CULLED | ACTOR_FLAG_DRAW_WHILE_CULLED)
+#define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
 typedef enum {
     /* 0 */ MOVE_TARGET,
@@ -101,7 +103,7 @@ void EnGSwitch_Init(Actor* thisx, PlayState* play) {
             // "maximum number of checks"
             osSyncPrintf(VT_FGCOL(PURPLE) "☆☆☆☆☆ 最大チェック数 ☆☆☆☆☆ %d\n" VT_RST, this->silverCount);
             osSyncPrintf("\n\n");
-            if (Flags_GetSwitch(play, this->switchFlag)) {
+            if (GameInteractor_Should(VB_SILVER_DESPAWN, Flags_GetSwitch(play, this->switchFlag), this)) {
                 // This is a reference to Hokuto no Ken
                 osSyncPrintf(VT_FGCOL(GREEN) "☆☆☆☆☆ Ｙｏｕ ａｒｅ Ｓｈｏｃｋ！  ☆☆☆☆☆ %d\n" VT_RST, this->switchFlag);
                 Actor_Kill(&this->actor);
@@ -119,7 +121,7 @@ void EnGSwitch_Init(Actor* thisx, PlayState* play) {
             Collider_SetCylinder(play, &this->collider, &this->actor, &sCylinderInit);
             this->actor.draw = EnGSwitch_DrawRupee;
             this->actor.shape.yOffset = 700.0f;
-            if (Flags_GetSwitch(play, this->switchFlag)) {
+            if (GameInteractor_Should(VB_SILVER_DESPAWN, Flags_GetSwitch(play, this->switchFlag), this)) {
                 osSyncPrintf(VT_FGCOL(GREEN) "☆☆☆☆☆ Ｙｏｕ ａｒｅ Ｓｈｏｃｋ！  ☆☆☆☆☆ %d\n" VT_RST, this->switchFlag);
                 Actor_Kill(&this->actor);
             } else {
@@ -211,28 +213,30 @@ void EnGSwitch_WaitForObject(EnGSwitch* this, PlayState* play) {
 void EnGSwitch_SilverRupeeTracker(EnGSwitch* this, PlayState* play) {
     static s8 majorScale[] = { 0, 2, 4, 5, 7, 9, 11, 13, 15, 17 };
 
-    if (this->noteIndex < sCollectedCount) {
-        if (sCollectedCount < (CVarGetInteger(CVAR_ENHANCEMENT("SilverRupeeJingleExtend"), 0) ? 10 : 5)) {
-            // "sound?"
-            osSyncPrintf(VT_FGCOL(GREEN) "☆☆☆☆☆ 音？ ☆☆☆☆☆ %d\n" VT_RST, this->noteIndex);
-            Audio_PlaySoundTransposed(&D_801333D4, NA_SE_EV_FIVE_COUNT_LUPY, majorScale[this->noteIndex]);
-            this->noteIndex = sCollectedCount;
+    if (GameInteractor_Should(VB_SILVER_COUNT_CHECK, true, this)) {
+        if (this->noteIndex < sCollectedCount) {
+            if (sCollectedCount < (CVarGetInteger(CVAR_ENHANCEMENT("SilverRupeeJingleExtend"), 0) ? 10 : 5)) {
+                // "sound?"
+                osSyncPrintf(VT_FGCOL(GREEN) "☆☆☆☆☆ 音？ ☆☆☆☆☆ %d\n" VT_RST, this->noteIndex);
+                Audio_PlaySoundTransposed(&gSfxDefaultPos, NA_SE_EV_FIVE_COUNT_LUPY, majorScale[this->noteIndex]);
+                this->noteIndex = sCollectedCount;
+            }
         }
-    }
-    if (sCollectedCount >= this->silverCount) {
-        // "It is now the end of the century."
-        // This another reference to Hokuto no Ken.
-        osSyncPrintf(VT_FGCOL(GREEN) "☆☆☆☆☆ 時はまさに世紀末〜  ☆☆☆☆☆ %d\n" VT_RST, this->switchFlag);
-        // "Last!"
-        osSyncPrintf(VT_FGCOL(GREEN) "☆☆☆☆☆ らすとぉ！          ☆☆☆☆☆ \n" VT_RST);
-        if ((play->sceneNum == SCENE_GERUDO_TRAINING_GROUND) && (this->actor.room == 2)) {
-            Flags_SetTempClear(play, this->actor.room);
-        } else {
-            func_80078884(NA_SE_SY_CORRECT_CHIME);
-            Flags_SetSwitch(play, this->switchFlag);
+        if (sCollectedCount >= this->silverCount) {
+            // "It is now the end of the century."
+            // This another reference to Hokuto no Ken.
+            osSyncPrintf(VT_FGCOL(GREEN) "☆☆☆☆☆ 時はまさに世紀末〜  ☆☆☆☆☆ %d\n" VT_RST, this->switchFlag);
+            // "Last!"
+            osSyncPrintf(VT_FGCOL(GREEN) "☆☆☆☆☆ らすとぉ！          ☆☆☆☆☆ \n" VT_RST);
+            if ((play->sceneNum == SCENE_GERUDO_TRAINING_GROUND) && (this->actor.room == 2)) {
+                Flags_SetTempClear(play, this->actor.room);
+            } else {
+                Sfx_PlaySfxCentered(NA_SE_SY_CORRECT_CHIME);
+                Flags_SetSwitch(play, this->switchFlag);
+            }
+            Sfx_PlaySfxCentered(NA_SE_SY_GET_RUPY);
+            Actor_Kill(&this->actor);
         }
-        func_80078884(NA_SE_SY_GET_RUPY);
-        Actor_Kill(&this->actor);
     }
 }
 
@@ -240,10 +244,10 @@ void EnGSwitch_SilverRupeeIdle(EnGSwitch* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
 
     this->actor.shape.rot.y += 0x800;
-    if (this->actor.xyzDistToPlayerSq < 900.0f) {
+    if (GameInteractor_Should(VB_SILVER_COLLECT, this->actor.xyzDistToPlayerSq < 900.0f, this)) {
         Rupees_ChangeBy(5);
         sCollectedCount++;
-        func_80078884(NA_SE_SY_GET_RUPY);
+        Sfx_PlaySfxCentered(NA_SE_SY_GET_RUPY);
         this->actor.world.pos = player->actor.world.pos;
         this->actor.world.pos.y += 40.0f;
         if (LINK_IS_ADULT) {
@@ -278,7 +282,7 @@ void EnGSwitch_GalleryRupee(EnGSwitch* this, PlayState* play) {
     if (this->delayTimer == 0) {
         switch (this->moveMode) {
             case GSWITCH_THROW:
-                Actor_MoveForward(&this->actor);
+                Actor_MoveXZGravity(&this->actor);
                 if ((this->actor.velocity.y < 0.0f) && (this->actor.world.pos.y < (this->actor.home.pos.y - 50.0f))) {
                     gallery = ((EnSyatekiItm*)this->actor.parent);
                     this->actor.velocity.y = 0.0f;
@@ -290,7 +294,7 @@ void EnGSwitch_GalleryRupee(EnGSwitch* this, PlayState* play) {
                 }
                 break;
             case GSWITCH_LEFT:
-                func_8002D7EC(&this->actor);
+                Actor_UpdatePos(&this->actor);
                 if ((this->actor.velocity.x < 0.0f) && (this->actor.world.pos.x < this->targetPos.x)) {
                     gallery = ((EnSyatekiItm*)this->actor.parent);
                     if (gallery->actor.update != NULL) {
@@ -300,7 +304,7 @@ void EnGSwitch_GalleryRupee(EnGSwitch* this, PlayState* play) {
                 }
                 break;
             case GSWITCH_RIGHT:
-                func_8002D7EC(&this->actor);
+                Actor_UpdatePos(&this->actor);
                 if (this->actor.world.pos.x > this->targetPos.x) {
                     gallery = ((EnSyatekiItm*)this->actor.parent);
                     if (gallery->actor.update != NULL) {
@@ -345,8 +349,8 @@ void EnGSwitch_GalleryRupee(EnGSwitch* this, PlayState* play) {
             if (gallery->actor.update != NULL) {
                 gallery->hitCount++;
                 gallery->targetState[this->index] = ENSYATEKIHIT_HIT;
-                func_80078884(NA_SE_EV_HIT_SOUND);
-                func_80078884(NA_SE_SY_GET_RUPY);
+                Sfx_PlaySfxCentered(NA_SE_EV_HIT_SOUND);
+                Sfx_PlaySfxCentered(NA_SE_SY_GET_RUPY);
                 // "Yeah !"
                 osSyncPrintf(VT_FGCOL(YELLOW) "☆☆☆☆☆ いぇぇーす！ＨＩＴ！！ ☆☆☆☆☆ %d\n" VT_RST, gallery->hitCount);
                 EnGSwitch_Break(this, play);
@@ -433,7 +437,7 @@ void EnGSwitch_Update(Actor* thisx, PlayState* play) {
     }
     if ((this->type != ENGSWITCH_SILVER_TRACKER) && (this->type != ENGSWITCH_SILVER_RUPEE) &&
         (this->type != ENGSWITCH_TARGET_RUPEE)) {
-        Actor_MoveForward(&this->actor);
+        Actor_MoveXZGravity(&this->actor);
         Actor_UpdateBgCheckInfo(play, &this->actor, 50.0f, 50.0f, 100.0f, 0x1C);
     }
     if (this->actor.draw != NULL) {
@@ -459,8 +463,7 @@ void EnGSwitch_DrawPot(Actor* thisx, PlayState* play) {
     if (!this->broken) {
         OPEN_DISPS(play->state.gfxCtx);
         Gfx_SetupDL_25Opa(play->state.gfxCtx);
-        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                  G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_OPA_DISP++, object_tsubo_DL_0017C0);
         CLOSE_DISPS(play->state.gfxCtx);
     }
@@ -481,6 +484,9 @@ void EnGSwitch_DrawRupee(Actor* thisx, PlayState* play) {
         OPEN_DISPS(play->state.gfxCtx);
 
         if (CVarGetInteger(CVAR_ENHANCEMENT("NewDrops"), 0)) {
+            func_8002EBCC(&this->actor, play, 0);
+            func_8002ED80(&this->actor, play, 0);
+
             // purple/gold/silver rupees need less scaling
             f32 mtxScale = this->colorIdx >= 3 ? 17.5f : 25.0f;
             Matrix_Scale(mtxScale, mtxScale, mtxScale, MTXMODE_APPLY);
@@ -488,18 +494,20 @@ void EnGSwitch_DrawRupee(Actor* thisx, PlayState* play) {
             if (this->type == ENGSWITCH_TARGET_RUPEE) {
                 GetItem_Draw(play, sRupeeTexturesNew[this->colorIdx]);
             } else {
-                Color_RGB8 silverRupeeColor = CVarGetColor24(CVAR_COSMETIC("Consumable.SilverRupee.Value"), (Color_RGB8){ 255, 255, 255 });
+                Color_RGB8 silverRupeeColor =
+                    CVarGetColor24(CVAR_COSMETIC("Consumable.SilverRupee.Value"), (Color_RGB8){ 255, 255, 255 });
                 Gfx_SetupDL_25Opa(play->state.gfxCtx);
-                gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                        G_MTX_MODELVIEW | G_MTX_LOAD);
-                gDPSetPrimColor(POLY_OPA_DISP++, 0, 0x80, silverRupeeColor.r, silverRupeeColor.g, silverRupeeColor.b, 255);
-                gDPSetEnvColor(POLY_OPA_DISP++, silverRupeeColor.r / 5, silverRupeeColor.g / 5, silverRupeeColor.b / 5, 255);
+                gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+                gDPSetPrimColor(POLY_OPA_DISP++, 0, 0x80, silverRupeeColor.r, silverRupeeColor.g, silverRupeeColor.b,
+                                255);
+                gDPSetEnvColor(POLY_OPA_DISP++, silverRupeeColor.r / 5, silverRupeeColor.g / 5, silverRupeeColor.b / 5,
+                               255);
                 gSPDisplayList(POLY_OPA_DISP++, gGiRupeeInnerDL);
                 Gfx_SetupDL_25Xlu(play->state.gfxCtx);
-                gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                        G_MTX_MODELVIEW | G_MTX_LOAD);
+                gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
                 gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x80, 255, 255, 255, 255);
-                gDPSetEnvColor(POLY_XLU_DISP++, silverRupeeColor.r * 0.75f, silverRupeeColor.g * 0.75f, silverRupeeColor.b * 0.75f, 255);
+                gDPSetEnvColor(POLY_XLU_DISP++, silverRupeeColor.r * 0.75f, silverRupeeColor.g * 0.75f,
+                               silverRupeeColor.b * 0.75f, 255);
                 gSPDisplayList(POLY_XLU_DISP++, gGiRupeeOuterDL);
             }
         } else {
@@ -507,27 +515,33 @@ void EnGSwitch_DrawRupee(Actor* thisx, PlayState* play) {
             u8 shouldColor = 0;
             switch (this->colorIdx) {
                 case 0:
-                    rupeeColor = CVarGetColor24(CVAR_COSMETIC("Consumable.GreenRupee.Value"), (Color_RGB8){ 255, 255, 255 });
+                    rupeeColor =
+                        CVarGetColor24(CVAR_COSMETIC("Consumable.GreenRupee.Value"), (Color_RGB8){ 255, 255, 255 });
                     shouldColor = CVarGetInteger(CVAR_COSMETIC("Consumable.GreenRupee.Changed"), 0);
                     break;
                 case 1:
-                    rupeeColor = CVarGetColor24(CVAR_COSMETIC("Consumable.BlueRupee.Value"), (Color_RGB8){ 255, 255, 255 });
+                    rupeeColor =
+                        CVarGetColor24(CVAR_COSMETIC("Consumable.BlueRupee.Value"), (Color_RGB8){ 255, 255, 255 });
                     shouldColor = CVarGetInteger(CVAR_COSMETIC("Consumable.BlueRupee.Changed"), 0);
                     break;
                 case 2:
-                    rupeeColor = CVarGetColor24(CVAR_COSMETIC("Consumable.RedRupee.Value"), (Color_RGB8){ 255, 255, 255 });
+                    rupeeColor =
+                        CVarGetColor24(CVAR_COSMETIC("Consumable.RedRupee.Value"), (Color_RGB8){ 255, 255, 255 });
                     shouldColor = CVarGetInteger(CVAR_COSMETIC("Consumable.RedRupee.Changed"), 0);
                     break;
                 case 4: // orange rupee texture corresponds to the purple rupee (authentic bug)
-                    rupeeColor = CVarGetColor24(CVAR_COSMETIC("Consumable.PurpleRupee.Value"), (Color_RGB8){ 255, 255, 255 });
+                    rupeeColor =
+                        CVarGetColor24(CVAR_COSMETIC("Consumable.PurpleRupee.Value"), (Color_RGB8){ 255, 255, 255 });
                     shouldColor = CVarGetInteger(CVAR_COSMETIC("Consumable.PurpleRupee.Changed"), 0);
                     break;
                 case 3: // pink rupee texture corresponds to the gold rupee (authentic bug)
-                    rupeeColor = CVarGetColor24(CVAR_COSMETIC("Consumable.GoldRupee.Value"), (Color_RGB8){ 255, 255, 255 });
+                    rupeeColor =
+                        CVarGetColor24(CVAR_COSMETIC("Consumable.GoldRupee.Value"), (Color_RGB8){ 255, 255, 255 });
                     shouldColor = CVarGetInteger(CVAR_COSMETIC("Consumable.GoldRupee.Changed"), 0);
                     break;
                 case 5:
-                    rupeeColor = CVarGetColor24(CVAR_COSMETIC("Consumable.SilverRupee.Value"), (Color_RGB8){ 255, 255, 255 });
+                    rupeeColor =
+                        CVarGetColor24(CVAR_COSMETIC("Consumable.SilverRupee.Value"), (Color_RGB8){ 255, 255, 255 });
                     shouldColor = CVarGetInteger(CVAR_COSMETIC("Consumable.SilverRupee.Changed"), 0);
                     break;
             }
@@ -629,33 +643,38 @@ void EnGSwitch_DrawEffects(EnGSwitch* this, PlayState* play) {
             Matrix_RotateX(effect->rot.x, MTXMODE_APPLY);
             Matrix_RotateY(effect->rot.y, MTXMODE_APPLY);
             Matrix_RotateZ(effect->rot.z, MTXMODE_APPLY);
-            gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                      G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
             Color_RGB8 rupeeColor;
             u8 shouldColor = 0;
             switch (effect->colorIdx) {
                 case 0:
-                    rupeeColor = CVarGetColor24(CVAR_COSMETIC("Consumable.GreenRupee.Value"), (Color_RGB8){ 255, 255, 255 });
+                    rupeeColor =
+                        CVarGetColor24(CVAR_COSMETIC("Consumable.GreenRupee.Value"), (Color_RGB8){ 255, 255, 255 });
                     shouldColor = CVarGetInteger(CVAR_COSMETIC("Consumable.GreenRupee.Changed"), 0);
                     break;
                 case 1:
-                    rupeeColor = CVarGetColor24(CVAR_COSMETIC("Consumable.BlueRupee.Value"), (Color_RGB8){ 255, 255, 255 });
+                    rupeeColor =
+                        CVarGetColor24(CVAR_COSMETIC("Consumable.BlueRupee.Value"), (Color_RGB8){ 255, 255, 255 });
                     shouldColor = CVarGetInteger(CVAR_COSMETIC("Consumable.BlueRupee.Changed"), 0);
                     break;
                 case 2:
-                    rupeeColor = CVarGetColor24(CVAR_COSMETIC("Consumable.RedRupee.Value"), (Color_RGB8){ 255, 255, 255 });
+                    rupeeColor =
+                        CVarGetColor24(CVAR_COSMETIC("Consumable.RedRupee.Value"), (Color_RGB8){ 255, 255, 255 });
                     shouldColor = CVarGetInteger(CVAR_COSMETIC("Consumable.RedRupee.Changed"), 0);
                     break;
                 case 3:
-                    rupeeColor = CVarGetColor24(CVAR_COSMETIC("Consumable.PurpleRupee.Value"), (Color_RGB8){ 255, 255, 255 });
+                    rupeeColor =
+                        CVarGetColor24(CVAR_COSMETIC("Consumable.PurpleRupee.Value"), (Color_RGB8){ 255, 255, 255 });
                     shouldColor = CVarGetInteger(CVAR_COSMETIC("Consumable.PurpleRupee.Changed"), 0);
                     break;
                 case 4:
-                    rupeeColor = CVarGetColor24(CVAR_COSMETIC("Consumable.GoldRupee.Value"), (Color_RGB8){ 255, 255, 255 });
+                    rupeeColor =
+                        CVarGetColor24(CVAR_COSMETIC("Consumable.GoldRupee.Value"), (Color_RGB8){ 255, 255, 255 });
                     shouldColor = CVarGetInteger(CVAR_COSMETIC("Consumable.GoldRupee.Changed"), 0);
                     break;
                 case 5:
-                    rupeeColor = CVarGetColor24(CVAR_COSMETIC("Consumable.SilverRupee.Value"), (Color_RGB8){ 255, 255, 255 });
+                    rupeeColor =
+                        CVarGetColor24(CVAR_COSMETIC("Consumable.SilverRupee.Value"), (Color_RGB8){ 255, 255, 255 });
                     shouldColor = CVarGetInteger(CVAR_COSMETIC("Consumable.SilverRupee.Changed"), 0);
                     break;
             }

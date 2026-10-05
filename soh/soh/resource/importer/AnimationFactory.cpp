@@ -1,14 +1,18 @@
 #include "soh/resource/importer/AnimationFactory.h"
 #include "soh/resource/type/Animation.h"
+#include <ship/resource/ResourceManager.h>
 #include "spdlog/spdlog.h"
+#include <ship/Context.h>
 
 namespace SOH {
-std::shared_ptr<Ship::IResource> ResourceFactoryBinaryAnimationV0::ReadResource(std::shared_ptr<Ship::File> file) {
-    if (!FileHasValidFormatAndReader(file)) {
+std::shared_ptr<Ship::IResource>
+ResourceFactoryBinaryAnimationV0::ReadResource(std::shared_ptr<Ship::File> file,
+                                               std::shared_ptr<Ship::ResourceInitData> initData) {
+    if (!FileHasValidFormatAndReader(file, initData)) {
         return nullptr;
     }
 
-    auto animation = std::make_shared<Animation>(file->InitData);
+    auto animation = std::make_shared<Animation>(initData);
     auto reader = std::get<std::shared_ptr<Ship::BinaryReader>>(file->Reader);
 
     AnimationType animType = (AnimationType)reader->ReadUInt32();
@@ -74,11 +78,33 @@ std::shared_ptr<Ship::IResource> ResourceFactoryBinaryAnimationV0::ReadResource(
         }
         animation->animationData.transformUpdateIndex.copyValues = animation->copyValuesArr.data();
     } else if (animType == AnimationType::Link) {
+        // Initialize segment to nullptr (important for alt asset fallback)
+        animation->animationData.linkAnimationHeader.segment = nullptr;
+
         // Read the frame count
         animation->animationData.linkAnimationHeader.common.frameCount = reader->ReadInt16();
 
         // Read the segment pointer (always 32 bit, doesn't adjust for system pointer size)
-        animation->animationData.linkAnimationHeader.segment = (void*)reader->ReadUInt32();
+        std::string path = reader->ReadString();
+        auto animData = std::static_pointer_cast<Animation>(
+            Ship::Context::GetRawInstance()->GetResourceManager()->LoadResourceProcess(path.c_str()));
+
+        // If direct load failed and alt assets are enabled, try with alt/ prefix
+        if (animData == nullptr && Ship::Context::GetRawInstance()->GetResourceManager()->IsAltAssetsEnabled()) {
+            std::string altPath = path;
+            if (altPath.find("__OTR__") == 0) {
+                altPath = altPath.substr(7); // Strip __OTR__
+            }
+            altPath = "alt/" + altPath;
+            animData = std::static_pointer_cast<Animation>(
+                Ship::Context::GetRawInstance()->GetResourceManager()->LoadResourceProcess(altPath.c_str()));
+        }
+
+        if (animData != nullptr) {
+            animation->animationData.linkAnimationHeader.segment = animData->GetPointer();
+        } else {
+            SPDLOG_WARN("Animation data segment not found: {}", path);
+        }
     } else if (animType == AnimationType::Legacy) {
         SPDLOG_DEBUG("BEYTAH ANIMATION?!");
     }

@@ -7,7 +7,7 @@
 #include "z_en_trap.h"
 #include "objects/object_trap/object_trap.h"
 
-#define FLAGS ACTOR_FLAG_UPDATE_WHILE_CULLED
+#define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
 #define BEGIN_MOVE_OUT 65535.0f
 
@@ -175,7 +175,7 @@ void EnTrap_Update(Actor* thisx, PlayState* play) {
                 angleToKnockPlayer = thisx->yawTowardsPlayer;
             }
             play->damagePlayer(play, -4);
-            func_8002F7A0(play, thisx, 6.0f, angleToKnockPlayer, 6.0f);
+            Actor_SetPlayerKnockbackSmallNoDamage(play, thisx, 6.0f, angleToKnockPlayer, 6.0f);
             this->playerDmgTimer = 15;
         }
         if (thisx->params & SPIKETRAP_MODE_LINEAR) {
@@ -369,7 +369,7 @@ void EnTrap_Update(Actor* thisx, PlayState* play) {
                 }
             }
         }
-        Actor_MoveForward(thisx); // Only used by straight line logic
+        Actor_MoveXZGravity(thisx); // Only used by straight line logic
         // Adjust position using bgcheck, but do not adjust x, z position if in straight line mode:
         if (thisx->params & SPIKETRAP_MODE_LINEAR) {
             posTemp = thisx->world.pos;

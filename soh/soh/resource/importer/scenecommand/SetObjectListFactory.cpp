@@ -1,15 +1,16 @@
+#include <tinyxml2.h>
+
 #include "soh/resource/importer/scenecommand/SetObjectListFactory.h"
 #include "soh/resource/type/scenecommand/SetObjectList.h"
 #include "soh/resource/logging/SceneCommandLoggers.h"
-#include "spdlog/spdlog.h"
 
 namespace SOH {
-std::shared_ptr<Ship::IResource>
-SetObjectListFactory::ReadResource(std::shared_ptr<Ship::ResourceInitData> initData, std::shared_ptr<Ship::BinaryReader> reader) {
+std::shared_ptr<Ship::IResource> SetObjectListFactory::ReadResource(std::shared_ptr<Ship::ResourceInitData> initData,
+                                                                    std::shared_ptr<Ship::BinaryReader> reader) {
     auto setObjectList = std::make_shared<SetObjectList>(initData);
 
     ReadCommandId(setObjectList, reader);
-	
+
     setObjectList->numObjects = reader->ReadUInt32();
     setObjectList->objects.reserve(setObjectList->numObjects);
     for (uint32_t i = 0; i < setObjectList->numObjects; i++) {
@@ -24,7 +25,7 @@ SetObjectListFactory::ReadResource(std::shared_ptr<Ship::ResourceInitData> initD
 }
 
 std::shared_ptr<Ship::IResource> SetObjectListFactoryXML::ReadResource(std::shared_ptr<Ship::ResourceInitData> initData,
-                                                                   tinyxml2::XMLElement* reader) {
+                                                                       tinyxml2::XMLElement* reader) {
     auto setObjectList = std::make_shared<SetObjectList>(initData);
 
     setObjectList->cmdId = SceneCommandID::SetObjectList;
@@ -40,7 +41,7 @@ std::shared_ptr<Ship::IResource> SetObjectListFactoryXML::ReadResource(std::shar
         child = child->NextSiblingElement();
     }
 
-    setObjectList->numObjects = setObjectList->objects.size();
+    setObjectList->numObjects = static_cast<u32>(setObjectList->objects.size());
 
     return setObjectList;
 }

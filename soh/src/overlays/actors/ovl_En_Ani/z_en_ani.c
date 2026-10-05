@@ -6,8 +6,9 @@
 
 #include "z_en_ani.h"
 #include "objects/object_ani/object_ani.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_FRIENDLY)
+#define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY)
 
 void EnAni_Init(Actor* thisx, PlayState* play);
 void EnAni_Destroy(Actor* thisx, PlayState* play);
@@ -74,8 +75,8 @@ void EnAni_Init(Actor* thisx, PlayState* play) {
 
     Actor_ProcessInitChain(&this->actor, sInitChain);
     ActorShape_Init(&this->actor.shape, -2800.0f, ActorShadow_DrawCircle, 36.0f);
-    SkelAnime_InitFlex(play, &this->skelAnime, &gRoofManSkel, &gRoofManIdleAnim, this->jointTable,
-                       this->morphTable, 0x10);
+    SkelAnime_InitFlex(play, &this->skelAnime, &gRoofManSkel, &gRoofManIdleAnim, this->jointTable, this->morphTable,
+                       0x10);
     Animation_PlayOnce(&this->skelAnime, &gRoofManIdleAnim);
     Collider_InitCylinder(play, &this->collider);
     Collider_SetCylinder(play, &this->collider, &this->actor, &sCylinderInit);
@@ -95,14 +96,12 @@ void EnAni_Destroy(Actor* thisx, PlayState* play) {
     EnAni* this = (EnAni*)thisx;
 
     Collider_DestroyCylinder(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 s32 EnAni_SetText(EnAni* this, PlayState* play, u16 textId) {
     this->actor.textId = textId;
     this->unk_2A8 |= 1;
-    func_8002F2CC(&this->actor, play, 100.0f);
+    Actor_OfferTalk(&this->actor, play, 100.0f);
     return 0;
 }
 
@@ -119,7 +118,7 @@ void func_809B0524(EnAni* this, PlayState* play) {
 }
 
 void func_809B0558(EnAni* this, PlayState* play) {
-    if (Actor_HasParent(&this->actor, play)) {
+    if (Actor_HasParent(&this->actor, play) || !GameInteractor_Should(VB_GIVE_ITEM_FROM_MAN_ON_ROOF, true)) {
         this->actor.parent = NULL;
         if (!LINK_IS_ADULT) {
             EnAni_SetupAction(this, func_809B04F0);
@@ -128,11 +127,8 @@ void func_809B0558(EnAni* this, PlayState* play) {
         }
         Flags_SetItemGetInf(ITEMGETINF_15);
     } else {
-        if (!IS_RANDO) {
-            func_8002F434(&this->actor, play, GI_HEART_PIECE, 10000.0f, 200.0f);
-        } else {
-            GetItemEntry getItemEntry = Randomizer_GetItemFromKnownCheck(RC_KAK_MAN_ON_ROOF, GI_HEART_PIECE);
-            GiveItemEntryFromActor(&this->actor, play, getItemEntry, 10000.0f, 200.0f);
+        if (GameInteractor_Should(VB_GIVE_ITEM_FROM_MAN_ON_ROOF, true)) {
+            Actor_OfferGetItem(&this->actor, play, GI_HEART_PIECE, 10000.0f, 200.0f);
         }
     }
 }
@@ -142,11 +138,8 @@ void func_809B05F0(EnAni* this, PlayState* play) {
         EnAni_SetupAction(this, func_809B0558);
     }
 
-    if (!IS_RANDO) {
-        func_8002F434(&this->actor, play, GI_HEART_PIECE, 10000.0f, 200.0f);
-    } else {
-        GetItemEntry getItemEntry = Randomizer_GetItemFromKnownCheck(RC_KAK_MAN_ON_ROOF, GI_HEART_PIECE);
-        GiveItemEntryFromActor(&this->actor, play, getItemEntry, 10000.0f, 200.0f);
+    if (GameInteractor_Should(VB_GIVE_ITEM_FROM_MAN_ON_ROOF, true)) {
+        Actor_OfferGetItem(&this->actor, play, GI_HEART_PIECE, 10000.0f, 200.0f);
     }
 }
 
@@ -252,7 +245,7 @@ void EnAni_Update(Actor* thisx, PlayState* play) {
 
     Collider_UpdateCylinder(&this->actor, &this->collider);
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);
-    Actor_MoveForward(&this->actor);
+    Actor_MoveXZGravity(&this->actor);
     Actor_UpdateBgCheckInfo(play, &this->actor, 0.0f, 0.0f, 0.0f, 4);
     if ((play->csCtx.state != CS_STATE_IDLE) && (play->csCtx.npcActions[0] != NULL)) {
         switch (this->unk_2AA) {
@@ -274,7 +267,7 @@ void EnAni_Update(Actor* thisx, PlayState* play) {
         }
 
         if (play->csCtx.frames == 100) {
-            func_800788CC(NA_SE_IT_EARTHQUAKE);
+            Sfx_PlaySfxCentered2(NA_SE_IT_EARTHQUAKE);
         }
     } else {
         if (SkelAnime_Update(&this->skelAnime) != 0) {
@@ -284,7 +277,7 @@ void EnAni_Update(Actor* thisx, PlayState* play) {
     }
 
     if (this->unk_2A8 & 1) {
-        func_80038290(play, &this->actor, &this->unk_29C, &this->unk_2A2, this->actor.focus.pos);
+        Actor_TrackPlayer(play, &this->actor, &this->unk_29C, &this->unk_2A2, this->actor.focus.pos);
         this->unk_2A2.z = 0;
         this->unk_2A2.y = this->unk_2A2.z;
         this->unk_2A2.x = this->unk_2A2.z;

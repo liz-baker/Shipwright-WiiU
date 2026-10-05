@@ -6,9 +6,9 @@
 
 #include "z_en_mk.h"
 #include "objects/object_mk/object_mk.h"
-#include "soh/Enhancements/randomizer/adult_trade_shuffle.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_WHILE_CULLED)
+#define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
 void EnMk_Init(Actor* thisx, PlayState* play);
 void EnMk_Destroy(Actor* thisx, PlayState* play);
@@ -79,13 +79,11 @@ void EnMk_Destroy(Actor* thisx, PlayState* play) {
     EnMk* this = (EnMk*)thisx;
 
     Collider_DestroyCylinder(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void func_80AACA40(EnMk* this, PlayState* play) {
     if (Actor_TextboxIsClosing(&this->actor, play)) {
-        this->actor.flags &= ~ACTOR_FLAG_WILL_TALK;
+        this->actor.flags &= ~ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED;
         this->actionFunc = EnMk_Wait;
     }
 
@@ -93,37 +91,23 @@ void func_80AACA40(EnMk* this, PlayState* play) {
 }
 
 void func_80AACA94(EnMk* this, PlayState* play) {
-    if (Actor_HasParent(&this->actor, play) != 0) {
+    if (Actor_HasParent(&this->actor, play) != 0 || !GameInteractor_Should(VB_TRADE_FROG, true, this)) {
         this->actor.parent = NULL;
-        this->actionFunc = func_80AACA40;
-        if (!IS_RANDO) {
-            func_80088AA0(240);
+        if (GameInteractor_Should(VB_TRADE_TIMER_EYEDROPS, true, this)) {
+            this->actionFunc = func_80AACA40;
+            Interface_SetSubTimer(240);
             gSaveContext.eventInf[1] &= ~1;
         }
     } else {
-        if (IS_RANDO) {
-            GetItemEntry getItemEntry = Randomizer_GetItemFromKnownCheck(RC_LH_TRADE_FROG, GI_EYEDROPS);
-            Randomizer_ConsumeAdultTradeItem(play, ITEM_FROG);
-            GiveItemEntryFromActor(&this->actor, play, getItemEntry, 10000.0f, 50.0f);
-            Flags_SetRandomizerInf(RAND_INF_ADULT_TRADES_LH_TRADE_FROG);
-        } else {
-            s32 getItemID = GI_EYEDROPS;
-            func_8002F434(&this->actor, play, getItemID, 10000.0f, 50.0f);
-        }
+        Actor_OfferGetItem(&this->actor, play, GI_EYEDROPS, 10000.0f, 50.0f);
     }
 }
 
 void func_80AACB14(EnMk* this, PlayState* play) {
     if (Actor_TextboxIsClosing(&this->actor, play)) {
         this->actionFunc = func_80AACA94;
-        if (IS_RANDO) {
-            GetItemEntry getItemEntry = Randomizer_GetItemFromKnownCheck(RC_LH_TRADE_FROG, GI_EYEDROPS);
-            Randomizer_ConsumeAdultTradeItem(play, ITEM_FROG);
-            GiveItemEntryFromActor(&this->actor, play, getItemEntry, 10000.0f, 50.0f);
-            Flags_SetRandomizerInf(RAND_INF_ADULT_TRADES_LH_TRADE_FROG);
-        } else {
-            s32 getItemID = GI_EYEDROPS;
-            func_8002F434(&this->actor, play, getItemID, 10000.0f, 50.0f);
+        if (GameInteractor_Should(VB_TRADE_FROG, true, this)) {
+            Actor_OfferGetItem(&this->actor, play, GI_EYEDROPS, 10000.0f, 50.0f);
         }
     }
 }
@@ -150,7 +134,7 @@ void func_80AACC04(EnMk* this, PlayState* play) {
     if (this->timer > 0) {
         this->timer--;
     } else {
-        this->timer = IS_RANDO ? 0 : 16;
+        this->timer = GameInteractor_Should(VB_PLAY_EYEDROP_CREATION_ANIM, true, this) ? 16 : 0;
         this->actionFunc = func_80AACBAC;
         Animation_Change(&this->skelAnime, &object_mk_Anim_000D88, 1.0f, 0.0f,
                          Animation_GetLastFrame(&object_mk_Anim_000D88), ANIMMODE_LOOP, -4.0f);
@@ -163,7 +147,7 @@ void func_80AACCA0(EnMk* this, PlayState* play) {
         this->timer--;
         this->actor.shape.rot.y += 0x800;
     } else {
-        this->timer = IS_RANDO ? 0 : 120;
+        this->timer = GameInteractor_Should(VB_PLAY_EYEDROP_CREATION_ANIM, true, this) ? 120 : 0;
         this->actionFunc = func_80AACC04;
         Animation_Change(&this->skelAnime, &object_mk_Anim_000724, 1.0f, 0.0f,
                          Animation_GetLastFrame(&object_mk_Anim_000724), ANIMMODE_LOOP, -4.0f);
@@ -179,7 +163,7 @@ void func_80AACD48(EnMk* this, PlayState* play) {
         this->actionFunc = func_80AACCA0;
         play->msgCtx.msgMode = MSGMODE_PAUSED;
         player->exchangeItemId = EXCH_ITEM_NONE;
-        this->timer = IS_RANDO ? 0 : 16;
+        this->timer = GameInteractor_Should(VB_PLAY_EYEDROP_CREATION_ANIM, true, this) ? 16 : 0;
         Animation_Change(&this->skelAnime, &object_mk_Anim_000D88, 1.0f, 0.0f,
                          Animation_GetLastFrame(&object_mk_Anim_000D88), ANIMMODE_LOOP, -4.0f);
         this->flags &= ~2;
@@ -213,29 +197,20 @@ void func_80AACEE8(EnMk* this, PlayState* play) {
 }
 
 void func_80AACFA0(EnMk* this, PlayState* play) {
-    if (Actor_HasParent(&this->actor, play)) {
+    if (Actor_HasParent(&this->actor, play) || !GameInteractor_Should(VB_GIVE_ITEM_FROM_LAB_DIVE, true, this)) {
         this->actor.parent = NULL;
         this->actionFunc = func_80AACA40;
         Flags_SetItemGetInf(ITEMGETINF_10);
     } else {
-        // not sure when/how/if this is getting called
-        if (!IS_RANDO) {
-            func_8002F434(&this->actor, play, GI_HEART_PIECE, 10000.0f, 50.0f);
-        } else {
-            GetItemEntry getItemEntry = Randomizer_GetItemFromKnownCheck(RC_LH_LAB_DIVE, GI_HEART_PIECE);
-            GiveItemEntryFromActor(&this->actor, play, getItemEntry, 10000.0f, 50.0f);
-        }
+        Actor_OfferGetItem(&this->actor, play, GI_HEART_PIECE, 10000.0f, 50.0f);
     }
 }
 
 void func_80AAD014(EnMk* this, PlayState* play) {
     if (Actor_TextboxIsClosing(&this->actor, play)) {
         this->actionFunc = func_80AACFA0;
-        if (!IS_RANDO) {
-            func_8002F434(&this->actor, play, GI_HEART_PIECE, 10000.0f, 50.0f);
-        } else {
-            GetItemEntry getItemEntry = Randomizer_GetItemFromKnownCheck(RC_LH_LAB_DIVE, GI_HEART_PIECE);
-            GiveItemEntryFromActor(&this->actor, play, getItemEntry, 10000.0f, 50.0f);
+        if (GameInteractor_Should(VB_GIVE_ITEM_FROM_LAB_DIVE, true, this)) {
+            Actor_OfferGetItem(&this->actor, play, GI_HEART_PIECE, 10000.0f, 50.0f);
         }
     }
 
@@ -249,15 +224,14 @@ void EnMk_Wait(EnMk* this, PlayState* play) {
     s32 playerExchangeItem;
 
     if (Actor_ProcessTalkRequest(&this->actor, play)) {
-        playerExchangeItem = func_8002F368(play);
+        playerExchangeItem = Actor_GetPlayerExchangeItemId(play);
 
         if (this->actor.textId != 0x4018) {
             player->actor.textId = this->actor.textId;
             this->actionFunc = func_80AACA40;
         } else {
-            // Skip eye drop text on rando if Link went in the water, so you can still receive the dive check
-            if (INV_CONTENT(ITEM_ODD_MUSHROOM) == ITEM_EYEDROPS &&
-                (!IS_RANDO || this->swimFlag == 0)) {
+            if (GameInteractor_Should(VB_USE_EYEDROP_DIALOGUE, (INV_CONTENT(ITEM_ODD_MUSHROOM) == ITEM_EYEDROPS),
+                                      this)) {
                 player->actor.textId = 0x4032;
                 this->actionFunc = func_80AACA40;
             } else {
@@ -288,8 +262,8 @@ void EnMk_Wait(EnMk* this, PlayState* play) {
                         Animation_Change(&this->skelAnime, &object_mk_Anim_000368, 1.0f, 0.0f,
                                          Animation_GetLastFrame(&object_mk_Anim_000368), ANIMMODE_ONCE, -4.0f);
                         this->flags &= ~2;
-                        gSaveContext.timer2State = 0;
-                        func_80078884(NA_SE_SY_TRE_BOX_APPEAR);
+                        gSaveContext.subTimerState = SUBTIMER_STATE_OFF;
+                        Sfx_PlaySfxCentered(NA_SE_SY_TRE_BOX_APPEAR);
                         break;
                     default:
                         player->actor.textId = 0x4018;
@@ -308,7 +282,7 @@ void EnMk_Wait(EnMk* this, PlayState* play) {
         angle = this->actor.yawTowardsPlayer - this->actor.shape.rot.y;
 
         if ((ABS(angle) < 0x2151) && (this->actor.xzDistToPlayer < 100.0f)) {
-            func_8002F298(&this->actor, play, 100.0f, EXCH_ITEM_FROG);
+            Actor_OfferTalkExchangeEquiCylinder(&this->actor, play, 100.0f, EXCH_ITEM_FROG);
             this->flags |= 1;
         }
     }
@@ -323,7 +297,7 @@ void EnMk_Update(Actor* thisx, PlayState* play) {
 
     Collider_UpdateCylinder(&this->actor, &this->collider);
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);
-    Actor_MoveForward(&this->actor);
+    Actor_MoveXZGravity(&this->actor);
     Actor_UpdateBgCheckInfo(play, &this->actor, 0.0f, 0.0f, 0.0f, 4);
 
     if ((!(this->flags & 2)) && (SkelAnime_Update(&this->skelAnime))) {
@@ -333,7 +307,7 @@ void EnMk_Update(Actor* thisx, PlayState* play) {
     this->actionFunc(this, play);
 
     if (this->flags & 1) {
-        func_80038290(play, &this->actor, &this->headRotation, &vec, this->actor.focus.pos);
+        Actor_TrackPlayer(play, &this->actor, &this->headRotation, &vec, this->actor.focus.pos);
     } else {
         Math_SmoothStepToS(&this->headRotation.x, 0, 6, 6200, 100);
         Math_SmoothStepToS(&this->headRotation.y, 0, 6, 6200, 100);
@@ -369,7 +343,7 @@ void EnMk_Update(Actor* thisx, PlayState* play) {
 
                     if ((!(this->flags & 4)) && (this->swimFlag >= 8)) {
                         this->flags |= 4;
-                        func_80078884(NA_SE_SY_CORRECT_CHIME);
+                        Sfx_PlaySfxCentered(NA_SE_SY_CORRECT_CHIME);
                     }
                 }
             }

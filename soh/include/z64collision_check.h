@@ -47,6 +47,17 @@ typedef struct {
     /* 0x07 */ u8 shape;   // JntSph, Cylinder, Tris, or Quad
 } ColliderInitToActor; // size = 0x08
 
+typedef enum HitSpecialEffect {
+    HIT_SPECIAL_EFFECT_NONE,
+    HIT_SPECIAL_EFFECT_FIRE,
+    HIT_SPECIAL_EFFECT_ICE,
+    HIT_SPECIAL_EFFECT_ELECTRIC,
+    HIT_SPECIAL_EFFECT_KNOCKBACK,
+    HIT_SPECIAL_EFFECT_7 = 7, // Same effect as `HIT_SPECIAL_EFFECT_NONE`
+    HIT_SPECIAL_EFFECT_8, // Same effect as `HIT_SPECIAL_EFFECT_NONE`
+    HIT_SPECIAL_EFFECT_9 // Same effect as `HIT_SPECIAL_EFFECT_NONE`
+} HitSpecialEffect;
+
 typedef struct {
     /* 0x00 */ u32 dmgFlags; // Toucher damage type flags.
     /* 0x04 */ u8 effect; // Damage Effect (Knockback, Fire, etc.)
@@ -190,6 +201,14 @@ typedef struct {
     /* 0x08 */ s32 count;
     /* 0x0C */ ColliderTrisElementInit* elements;
 } ColliderTrisInitType1; // size = 0x10
+
+// <sys/types.h> on BSD-derived libcs (devkitPro newlib: Wii U, Switch) defines `quad` as a macro,
+// which would turn the member names below into `quad_t` if it was included before this header.
+// global.h also undefines it, but only after its own includes, which is too late for C++ files that
+// pull in <sys/types.h> (e.g. through spdlog) before z64.h.
+#ifdef quad
+#undef quad
+#endif
 
 typedef struct {
     /* 0x00 */ Vec3f quad[4];

@@ -8,8 +8,9 @@
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "objects/object_bw/object_bw.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/savestate_serialize.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_WHILE_CULLED)
+#define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
 void EnBw_Init(Actor* thisx, PlayState* play);
 void EnBw_Destroy(Actor* thisx, PlayState* play);
@@ -123,7 +124,11 @@ static DamageTable sDamageTable = {
     /* Unknown 2     */ DMG_ENTRY(0, 0x0),
 };
 
-s32 sSlugGroup = 0;
+static s32 sSlugGroup = 0;
+
+#define EN_BW_SHIP_SAVESTATE_FIELDS(F) F(sSlugGroup)
+
+SHIP_SAVESTATE_DEFINE(EnBw, EN_BW_SHIP_SAVESTATE_FIELDS)
 
 void EnBw_SetupAction(EnBw* this, EnBwActionFunc actionFunc) {
     this->actionFunc = actionFunc;
@@ -162,8 +167,6 @@ void EnBw_Destroy(Actor* thisx, PlayState* play) {
 
     Collider_DestroyCylinder(play, &this->collider1);
     Collider_DestroyCylinder(play, &this->collider2);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void func_809CE884(EnBw* this, PlayState* play) {
@@ -227,8 +230,8 @@ void func_809CEA24(EnBw* this, PlayState* play) {
         this->color1.g = sp60;
     }
     if ((((play->gameplayFrames % 4) == (u32)this->actor.params) && (this->actor.speedXZ != 0.0f) &&
-         (sp64 = BgCheck_AnyLineTest2(&play->colCtx, &this->actor.world.pos, &this->unk_264, &sp68, &sp74, 1, 0, 0,
-                                      1))) ||
+         (sp64 =
+              BgCheck_AnyLineTest2(&play->colCtx, &this->actor.world.pos, &this->unk_264, &sp68, &sp74, 1, 0, 0, 1))) ||
         (this->unk_222 == 0)) {
         if (sp74 != NULL) {
             sp74 = SEGMENTED_TO_VIRTUAL(sp74);
@@ -283,7 +286,7 @@ void func_809CEA24(EnBw* this, PlayState* play) {
             }
             this->unk_222 = (Rand_ZeroOne() * 200.0f) + 200.0f;
         }
-    } else if ((this->actor.speedXZ != 0.0f) && (this->actor.bgCheckFlags & 8)) {
+    } else if ((this->actor.speedXZ != 0.0f) && (this->actor.bgCheckFlags & BGCHECKFLAG_WALL)) {
         if (this->unk_236 != this->actor.wallYaw) {
             sp64 = 1;
             this->unk_236 = this->actor.wallYaw;
@@ -306,8 +309,8 @@ void func_809CEA24(EnBw* this, PlayState* play) {
                 }
             }
         } else if (this->unk_221 == 0) {
-            sp64 = BgCheck_AnyLineTest2(&play->colCtx, &this->actor.world.pos, &player->actor.world.pos, &sp68,
-                                        &sp74, 1, 0, 0, 1);
+            sp64 = BgCheck_AnyLineTest2(&play->colCtx, &this->actor.world.pos, &player->actor.world.pos, &sp68, &sp74,
+                                        1, 0, 0, 1);
             if (sp64 != 0) {
                 sp74 = SEGMENTED_TO_VIRTUAL(sp74);
                 sp60 = Math_FAtan2F(sp74->normal.x, sp74->normal.z) * ((f32)0x8000 / M_PI);
@@ -326,8 +329,7 @@ void func_809CEA24(EnBw* this, PlayState* play) {
     if (this->unk_224 != 0) {
         this->unk_224--;
     }
-    if ((this->unk_234 == 0) &&
-        !Actor_TestFloorInDirection(&this->actor, play, 50.0f, this->unk_236 + this->unk_238)) {
+    if ((this->unk_234 == 0) && !Actor_TestFloorInDirection(&this->actor, play, 50.0f, this->unk_236 + this->unk_238)) {
         if (this->unk_238 != 0x4000) {
             this->unk_238 = 0x4000;
         } else {
@@ -359,14 +361,16 @@ void func_809CEA24(EnBw* this, PlayState* play) {
                 Math_SmoothStepToS(&this->actor.world.rot.y, this->unk_236 + this->unk_238, 1,
                                    this->actor.speedXZ * 1000.0f, 0);
             }
-            if ((this->unk_224 == 0) || (ABS(this->actor.yDistToPlayer) > 60.0f) || (player2->stateFlags1 & (PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE))) {
+            if ((this->unk_224 == 0) || (ABS(this->actor.yDistToPlayer) > 60.0f) ||
+                (player2->stateFlags1 & (PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE))) {
                 this->unk_221 = 3;
                 this->unk_224 = 150;
                 this->unk_250 = 0.0f;
             }
             break;
         case 1:
-            if (((sp64 == 0) && !(this->actor.bgCheckFlags & 8)) || Actor_IsFacingPlayer(&this->actor, 0x1C70)) {
+            if (((sp64 == 0) && !(this->actor.bgCheckFlags & BGCHECKFLAG_WALL)) ||
+                Actor_IsFacingPlayer(&this->actor, 0x1C70)) {
                 if (Actor_IsFacingPlayer(&this->actor, 0x1C70)) {
                     this->unk_238 = -this->unk_238;
                 }
@@ -433,7 +437,7 @@ void func_809CF8F0(EnBw* this) {
     this->unk_222 = 1000;
     this->actor.velocity.y = 11.0f;
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_STAL_JUMP);
-    this->actor.flags |= ACTOR_FLAG_PLAY_HIT_SFX;
+    this->actor.flags |= ACTOR_FLAG_SFX_FOR_PLAYER_BODY_HIT;
     EnBw_SetupAction(this, func_809CF984);
 }
 
@@ -456,14 +460,14 @@ void func_809CF984(EnBw* this, PlayState* play) {
     }
     SkelAnime_Update(&this->skelAnime);
     if (this->actor.bgCheckFlags & 3) {
-        floorPolyType = func_80041D4C(&play->colCtx, this->actor.floorPoly, this->actor.floorBgId);
+        floorPolyType = SurfaceType_GetFloorType(&play->colCtx, this->actor.floorPoly, this->actor.floorBgId);
         if ((floorPolyType == 2) || (floorPolyType == 3) || (floorPolyType == 9)) {
             Actor_Kill(&this->actor);
             return;
         }
         Actor_SpawnFloorDustRing(play, &this->actor, &this->actor.world.pos, 30.0f, 11, 4.0f, 0, 0, false);
         this->unk_222 = 3000;
-        this->actor.flags &= ~ACTOR_FLAG_PLAY_HIT_SFX;
+        this->actor.flags &= ~ACTOR_FLAG_SFX_FOR_PLAYER_BODY_HIT;
         this->actor.speedXZ = 0.0f;
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_DODO_M_GND);
         EnBw_SetupAction(this, func_809CE884);
@@ -494,7 +498,7 @@ void func_809CFC4C(EnBw* this, PlayState* play) {
         this->unk_221 = 4;
         this->unk_258 += this->unk_25C;
         Math_SmoothStepToF(&this->unk_260, 0.075f, 1.0f, 0.005f, 0.0f);
-        if (this->actor.bgCheckFlags & 2) {
+        if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND_TOUCH) {
             Actor_SpawnFloorDustRing(play, &this->actor, &this->actor.world.pos, 30.0f, 11, 4.0f, 0, 0, false);
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_DODO_M_GND);
         }
@@ -574,7 +578,7 @@ void func_809CFF98(EnBw* this, PlayState* play) {
 void func_809D00F4(EnBw* this) {
     this->unk_220 = 0;
     this->unk_222 = 40;
-    this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+    this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
     this->actor.speedXZ = 0.0f;
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_BUBLEWALK_DEAD);
     EnBw_SetupAction(this, func_809D014C);
@@ -680,7 +684,7 @@ void func_809D0424(EnBw* this, PlayState* play) {
 }
 
 void func_809D0584(EnBw* this, PlayState* play) {
-    if ((this->actor.bgCheckFlags & 0x10) && (this->actor.bgCheckFlags & 1)) {
+    if ((this->actor.bgCheckFlags & 0x10) && (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
         this->unk_230 = 0;
         this->actor.scale.y -= 0.009f;
         Actor_SpawnFloorDustRing(play, &this->actor, &this->actor.world.pos, 30.0f, 11, 4.0f, 0, 0, false);
@@ -729,7 +733,7 @@ void func_809D0584(EnBw* this, PlayState* play) {
             }
         }
         if ((play->actorCtx.unk_02 != 0) && (this->actor.xzDistToPlayer <= 400.0f) &&
-            (this->actor.bgCheckFlags & 1)) {
+            (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
             if (this->unk_220 == 5) {
                 this->unk_23C = 0;
                 func_809CFF10(this);
@@ -794,7 +798,7 @@ void EnBw_Update(Actor* thisx, PlayState* play2) {
         this->unk_234 = Actor_TestFloorInDirection(thisx, play, 50.0f, thisx->world.rot.y);
         if ((this->unk_220 == 4) || (this->unk_220 == 6) || (this->unk_220 == 5) || (this->unk_220 == 1) ||
             (this->unk_234 != 0)) {
-            Actor_MoveForward(thisx);
+            Actor_MoveXZGravity(thisx);
         }
         Actor_UpdateBgCheckInfo(play, thisx, 20.0f, 30.0f, 21.0f, 0x1F);
     }
@@ -811,13 +815,13 @@ void EnBw_Update(Actor* thisx, PlayState* play2) {
     thisx->focus.pos.y += 5.0f;
 }
 
-s32 EnBw_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx,
-                          Gfx** gfx) {
+s32 EnBw_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx, Gfx** gfx) {
     EnBw* this = (EnBw*)thisx;
 
     if (limbIndex == 1) {
-        gSPSegment((*gfx)++, 0x09,
-                   Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 0x20, 0x20, 1, 0, this->unk_23A, 0x20, 0x20));
+        gSPSegment(
+            (*gfx)++, 0x09,
+            Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, 0, 0, 0x20, 0x20, 1, 0, this->unk_23A, 0x20, 0x20, 0, 0, 0, 1));
         if ((this->unk_220 == 1) || (this->unk_220 == 5)) {
             Matrix_Push();
             Matrix_Scale(1.0f, 1.0f, 1.0f, MTXMODE_APPLY);
@@ -828,8 +832,7 @@ s32 EnBw_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* po
             Matrix_RotateZ(-(this->unk_258 * 0.1f), MTXMODE_APPLY);
             Matrix_RotateY(-(this->unk_258 * 0.13f), MTXMODE_APPLY);
             Matrix_RotateX(-(this->unk_258 * 0.115f), MTXMODE_APPLY);
-            gSPMatrix((*gfx)++, MATRIX_NEWMTX(play->state.gfxCtx),
-                      G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPMatrix((*gfx)++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
             gSPDisplayList((*gfx)++, *dList);
             Matrix_Pop();
             return 1;
@@ -856,16 +859,16 @@ void EnBw_Draw(Actor* thisx, PlayState* play2) {
         Gfx_SetupDL_25Opa(play->state.gfxCtx);
         gDPSetEnvColor(POLY_OPA_DISP++, this->color1.r, this->color1.g, this->color1.b, this->color1.a);
         gSPSegment(POLY_OPA_DISP++, 0x08, &D_80116280[2]);
-        POLY_OPA_DISP = SkelAnime_Draw(play, this->skelAnime.skeleton, this->skelAnime.jointTable,
-                                       EnBw_OverrideLimbDraw, NULL, this, POLY_OPA_DISP);
+        POLY_OPA_DISP =
+            SkelAnime_DrawSkeleton2(play, &this->skelAnime, EnBw_OverrideLimbDraw, NULL, this, POLY_OPA_DISP);
     } else {
         Gfx_SetupDL_25Xlu(play->state.gfxCtx);
         gDPPipeSync(POLY_XLU_DISP++);
         gDPSetPrimColor(POLY_XLU_DISP++, 0x80, 0x80, 0, 0, 0, this->color1.a);
         gDPSetEnvColor(POLY_XLU_DISP++, this->color1.r, this->color1.g, this->color1.b, this->color1.a);
         gSPSegment(POLY_XLU_DISP++, 0x08, &D_80116280[0]);
-        POLY_XLU_DISP = SkelAnime_Draw(play, this->skelAnime.skeleton, this->skelAnime.jointTable,
-                                       EnBw_OverrideLimbDraw, NULL, this, POLY_XLU_DISP);
+        POLY_XLU_DISP =
+            SkelAnime_DrawSkeleton2(play, &this->skelAnime, EnBw_OverrideLimbDraw, NULL, this, POLY_XLU_DISP);
     }
 
     if (((play->gameplayFrames + 1) % 4) == (u32)thisx->params) {
@@ -885,13 +888,12 @@ void EnBw_Draw(Actor* thisx, PlayState* play2) {
     gDPSetEnvColor(POLY_XLU_DISP++, 255, 0, 0, 0);
 
     gSPSegment(POLY_XLU_DISP++, 0x08,
-               Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 0x20, 0x40, 1, 0,
-                                (play->gameplayFrames * -20) % 0x200, 0x20, 0x80));
+               Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, 0, 0, 0x20, 0x40, 1, 0, (play->gameplayFrames * -20) % 0x200,
+                                  0x20, 0x80, 0, 0, 0, -20));
     gDPSetPrimColor(POLY_XLU_DISP++, 0x80, 0x80, 255, 255, 0, 255);
     Matrix_Scale(this->unk_248 * 0.01f, this->unk_248 * 0.01f, this->unk_248 * 0.01f, MTXMODE_APPLY);
     Matrix_ReplaceRotation(&play->billboardMtxF);
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
 
     if (this->iceTimer != 0) {

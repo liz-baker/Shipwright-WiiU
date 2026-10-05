@@ -13,7 +13,7 @@
 #include "objects/object_dns/object_dns.h"
 #include "objects/object_dnk/object_dnk.h"
 
-#define FLAGS ACTOR_FLAG_UPDATE_WHILE_CULLED
+#define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
 void EnNutsball_Init(Actor* thisx, PlayState* play);
 void EnNutsball_Destroy(Actor* thisx, PlayState* play);
@@ -118,8 +118,9 @@ void func_80ABBBA8(EnNutsball* this, PlayState* play) {
 
     this->actor.home.rot.z += 0x2AA8;
 
-    if ((this->actor.bgCheckFlags & 8) || (this->actor.bgCheckFlags & 1) || (this->collider.base.atFlags & AT_HIT) ||
-        (this->collider.base.acFlags & AC_HIT) || (this->collider.base.ocFlags1 & OC1_HIT)) {
+    if ((this->actor.bgCheckFlags & BGCHECKFLAG_WALL) || (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) ||
+        (this->collider.base.atFlags & AT_HIT) || (this->collider.base.acFlags & AC_HIT) ||
+        (this->collider.base.ocFlags1 & OC1_HIT)) {
         // Checking if the player is using a shield that reflects projectiles
         // And if so, reflects the projectile on impact
         if ((player->currentShield == PLAYER_SHIELD_DEKU) ||
@@ -156,14 +157,16 @@ void EnNutsball_Update(Actor* thisx, PlayState* play) {
     Player* player = GET_PLAYER(play);
     s32 pad;
 
-    if (!(player->stateFlags1 & (PLAYER_STATE1_TEXT_ON_SCREEN | PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_IN_CUTSCENE)) || (this->actionFunc == func_80ABBB34)) {
+    if (!(player->stateFlags1 &
+          (PLAYER_STATE1_TALKING | PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_IN_CUTSCENE)) ||
+        (this->actionFunc == func_80ABBB34)) {
         this->actionFunc(this, play);
 
-        Actor_MoveForward(&this->actor);
+        Actor_MoveXZGravity(&this->actor);
         Actor_UpdateBgCheckInfo(play, &this->actor, 10, sCylinderInit.dim.radius, sCylinderInit.dim.height, 5);
         Collider_UpdateCylinder(&this->actor, &this->collider);
 
-        this->actor.flags |= ACTOR_FLAG_PLAY_HIT_SFX;
+        this->actor.flags |= ACTOR_FLAG_SFX_FOR_PLAYER_BODY_HIT;
 
         CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
         CollisionCheck_SetAC(play, &play->colChkCtx, &this->collider.base);
@@ -179,21 +182,19 @@ void EnNutsball_Draw(Actor* thisx, PlayState* play) {
     if (CVarGetInteger(CVAR_ENHANCEMENT("NewDrops"), 0) != 0) {
         Gfx_SetupDL_25Opa(play->state.gfxCtx);
         gSPSegment(POLY_OPA_DISP++, 0x08,
-                Gfx_TwoTexScroll(play->state.gfxCtx, 0, 1 * (play->state.frames * 6),
-                                    1 * (play->state.frames * 6), 32, 32, 1, 1 * (play->state.frames * 6),
-                                    1 * (play->state.frames * 6), 32, 32));
-        Matrix_Scale(25.0f,25.0f,25.0f,MTXMODE_APPLY);
+                   Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, 1 * (play->state.frames * 6), 1 * (play->state.frames * 6),
+                                      32, 32, 1, 1 * (play->state.frames * 6), 1 * (play->state.frames * 6), 32, 32, 6,
+                                      6, 6, 6));
+        Matrix_Scale(25.0f, 25.0f, 25.0f, MTXMODE_APPLY);
         Matrix_RotateX(thisx->home.rot.z * 9.58738e-05f, MTXMODE_APPLY);
-        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                G_MTX_MODELVIEW | G_MTX_LOAD);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
         gSPDisplayList(POLY_OPA_DISP++, sDListsNew[thisx->params]);
     } else {
         Gfx_SetupDL_25Opa(play->state.gfxCtx);
         Matrix_Mult(&play->billboardMtxF, MTXMODE_APPLY);
-        
+
         Matrix_RotateZ(thisx->home.rot.z * 9.58738e-05f, MTXMODE_APPLY);
-        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                G_MTX_MODELVIEW | G_MTX_LOAD);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
         gSPDisplayList(POLY_OPA_DISP++, sDLists[thisx->params]);
     }
 

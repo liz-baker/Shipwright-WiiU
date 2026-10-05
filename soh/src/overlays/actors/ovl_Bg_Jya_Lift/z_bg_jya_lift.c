@@ -6,8 +6,9 @@
 
 #include "z_bg_jya_lift.h"
 #include "objects/object_jya_obj/object_jya_obj.h"
+#include "soh/OTRGlobals.h"
 
-#define FLAGS ACTOR_FLAG_UPDATE_WHILE_CULLED
+#define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
 void BgJyaLift_Init(Actor* thisx, PlayState* play);
 void BgJyaLift_Destroy(Actor* thisx, PlayState* play);
@@ -99,12 +100,11 @@ void BgJyaLift_DelayMove(BgJyaLift* this, PlayState* play) {
             // The cutscene of the platform lowering will show the central room in an unloaded state if
             // Link is not standing on the platform as it lowers. Therefore check for the Sunlight arrows
             // enhancement and if it's enabled, check that Link is on the platform. Otherwise skip it.
-            if (!(CVarGetInteger(CVAR_ENHANCEMENT("SunlightArrows"), 0) || Randomizer_GetSettingValue(RSK_SUNLIGHT_ARROWS)) || 
-                                                      (GET_PLAYER(play)->actor.world.pos.x >   -19.0f &&
-                                                       GET_PLAYER(play)->actor.world.pos.x <   139.0f &&
-                                                       GET_PLAYER(play)->actor.world.pos.z > -1172.0f &&
-                                                       GET_PLAYER(play)->actor.world.pos.z < -1009.0f)) {
-                OnePointCutscene_Init(play, 3430, -99, &this->dyna.actor, MAIN_CAM);
+            if (!(CVarGetInteger(CVAR_ENHANCEMENT("SunlightArrows"), 0) ||
+                  Randomizer_GetSettingValue(RSK_SUNLIGHT_ARROWS)) ||
+                (GET_PLAYER(play)->actor.world.pos.x > -19.0f && GET_PLAYER(play)->actor.world.pos.x < 139.0f &&
+                 GET_PLAYER(play)->actor.world.pos.z > -1172.0f && GET_PLAYER(play)->actor.world.pos.z < -1009.0f)) {
+                OnePointCutscene_Init(play, 3430, -99, &this->dyna.actor, CAM_ID_MAIN);
             }
             BgJyaLift_SetupMove(this);
         }
@@ -129,7 +129,7 @@ void BgJyaLift_Move(BgJyaLift* this, PlayState* play) {
         BgJyaLift_SetFinalPosY(this);
         Audio_PlayActorSound2(&this->dyna.actor, NA_SE_EV_ELEVATOR_STOP);
     } else {
-        func_8002F974(&this->dyna.actor, NA_SE_EV_BRIDGE_OPEN - SFX_FLAG);
+        Actor_PlaySfx_Flagged(&this->dyna.actor, NA_SE_EV_BRIDGE_OPEN - SFX_FLAG);
     }
 }
 
@@ -145,13 +145,14 @@ void BgJyaLift_Update(Actor* thisx, PlayState* play2) {
     if (this->actionFunc != NULL) {
         this->actionFunc(this, play);
     }
-    if ((this->dyna.unk_160 & 4) && ((this->unk_16B & 4) == 0)) {
-        Camera_ChangeSetting(play->cameraPtrs[MAIN_CAM], CAM_SET_DIRECTED_YAW);
-    } else if (((this->dyna.unk_160) & 4) == 0 && ((this->unk_16B & 4)) &&
-               (play->cameraPtrs[MAIN_CAM]->setting == CAM_SET_DIRECTED_YAW)) {
-        Camera_ChangeSetting(play->cameraPtrs[MAIN_CAM], CAM_SET_DUNGEON0);
+    if ((this->dyna.interactFlags & DYNA_INTERACT_PLAYER_ABOVE) &&
+        ((this->unk_16B & DYNA_INTERACT_PLAYER_ABOVE) == 0)) {
+        Camera_RequestSetting(play->cameraPtrs[CAM_ID_MAIN], CAM_SET_DIRECTED_YAW);
+    } else if (((this->dyna.interactFlags) & 4) == 0 && ((this->unk_16B & 4)) &&
+               (play->cameraPtrs[CAM_ID_MAIN]->setting == CAM_SET_DIRECTED_YAW)) {
+        Camera_RequestSetting(play->cameraPtrs[CAM_ID_MAIN], CAM_SET_DUNGEON0);
     }
-    this->unk_16B = this->dyna.unk_160;
+    this->unk_16B = this->dyna.interactFlags;
 
     // Spirit Temple room 5 is the main room with the statue room 25 is directly above room 5
     if ((play->roomCtx.curRoom.num != 5) && (play->roomCtx.curRoom.num != 25)) {
