@@ -408,6 +408,33 @@ static bool RemoveArchiveAcrossAppDirs(const std::string& fileName) {
     return !std::filesystem::exists(Ship::Context::LocateFileAcrossAppDirs(fileName, appShortName));
 }
 
+#if defined(__SWITCH__) || defined(__WIIU__)
+// The consoles can't extract a ROM: the archives have to be generated on a PC and copied over.
+void OTRGlobals::RunExtract(int argc, char* argv[]) {
+    OTRVersion vanillaVersion = DetectOTRVersion("oot.o2r", false);
+    OTRVersion mqVersion = DetectOTRVersion("oot-mq.o2r", true);
+
+    if (VerifyArchiveVersion(vanillaVersion) || VerifyArchiveVersion(mqVersion)) {
+#if defined(__WIIU__)
+        OSFatal("You've launched the Ship with an old ROM O2R file.\n\n"
+                "Please generate a new ROM O2R on a PC and relaunch.");
+#else
+        SPDLOG_ERROR("Outdated ROM archives. Generate new ones on a PC and relaunch.");
+        exit(1);
+#endif
+    }
+
+    if (!std::filesystem::exists(Ship::Context::LocateFileAcrossAppDirs("oot-mq.o2r", appShortName)) &&
+        !std::filesystem::exists(Ship::Context::LocateFileAcrossAppDirs("oot.o2r", appShortName))) {
+#if defined(__WIIU__)
+        Ship::WiiU::ThrowMissingOTR(Ship::Context::GetPathRelativeToAppDirectory("oot.o2r", appShortName).c_str());
+#else
+        SPDLOG_ERROR("No ROM archives found. Generate them on a PC and copy them over.");
+        exit(1);
+#endif
+    }
+}
+#else
 void OTRGlobals::RunExtract(int argc, char* argv[]) {
     bool extractDone = false;
     ExtractSteps extractStep = ES_PORT_ARCHIVE;
@@ -793,6 +820,7 @@ void OTRGlobals::RunExtract(int argc, char* argv[]) {
     Ship::WiiU::Init(appShortName);
 #endif
 }
+#endif
 
 void InitGfxDebugger() {
     auto dbg =
@@ -1477,9 +1505,19 @@ OTRVersion DetectOTRVersion(std::string fileName, bool isMQ) {
     return ReadPortVersionFromOTR(otrPath);
 }
 
+#if defined(__WIIU__)
+extern "C" void Messagebox_ShowErrorBox(char* title, char* body) {
+    OSFatal(body);
+}
+#elif defined(__SWITCH__)
+extern "C" void Messagebox_ShowErrorBox(char* title, char* body) {
+    SPDLOG_ERROR("{}: {}", title, body);
+}
+#else
 extern "C" void Messagebox_ShowErrorBox(char* title, char* body) {
     Extractor::ShowErrorBox(title, body);
 }
+#endif
 
 bool VerifyArchiveVersion(OTRVersion version) {
     return version.major != INT16_MAX && version.major != gBuildVersionMajor;
