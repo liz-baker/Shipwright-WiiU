@@ -6,8 +6,9 @@
 
 #include "z_bg_hidan_curtain.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
-#define FLAGS ACTOR_FLAG_UPDATE_WHILE_CULLED
+#define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
 void BgHidanCurtain_Init(Actor* thisx, PlayState* play);
 void BgHidanCurtain_Destroy(Actor* thisx, PlayState* play);
@@ -76,8 +77,8 @@ void BgHidanCurtain_Init(Actor* thisx, PlayState* play) {
     this->type = (thisx->params >> 0xC) & 0xF;
     if (this->type > 6) {
         // "Type is not set"
-        osSyncPrintf("Error : object のタイプが設定されていない(%s %d)(arg_data 0x%04x)\n", __FILE__,
-                     __LINE__, this->actor.params);
+        osSyncPrintf("Error : object のタイプが設定されていない(%s %d)(arg_data 0x%04x)\n", __FILE__, __LINE__,
+                     this->actor.params);
         Actor_Kill(&this->actor);
         return;
     }
@@ -89,8 +90,8 @@ void BgHidanCurtain_Init(Actor* thisx, PlayState* play) {
 
     if ((this->actor.params < 0) || (this->actor.params > 0x3F)) {
         // "Save bit is not set"
-        osSyncPrintf("Warning : object のセーブビットが設定されていない(%s %d)(arg_data 0x%04x)\n",
-                     __FILE__, __LINE__, this->actor.params);
+        osSyncPrintf("Warning : object のセーブビットが設定されていない(%s %d)(arg_data 0x%04x)\n", __FILE__, __LINE__,
+                     this->actor.params);
     }
     Actor_SetScale(&this->actor, hcParams->scale);
     Collider_InitCylinder(play, &this->collider);
@@ -128,11 +129,11 @@ void BgHidanCurtain_WaitForSwitchOn(BgHidanCurtain* this, PlayState* play) {
     if (Flags_GetSwitch(play, this->actor.params)) {
         if (this->type == 1) {
             this->actionFunc = BgHidanCurtain_WaitForCutscene;
-            OnePointCutscene_Init(play, 3350, -99, &this->actor, MAIN_CAM);
+            OnePointCutscene_Init(play, 3350, -99, &this->actor, CAM_ID_MAIN);
             this->timer = 50;
         } else if (this->type == 3) {
             this->actionFunc = BgHidanCurtain_WaitForCutscene;
-            OnePointCutscene_Init(play, 3360, 60, &this->actor, MAIN_CAM);
+            OnePointCutscene_Init(play, 3360, 60, &this->actor, CAM_ID_MAIN);
             this->timer = 30;
         } else {
             this->actionFunc = BgHidanCurtain_TurnOff;
@@ -191,12 +192,15 @@ void BgHidanCurtain_TurnOff(BgHidanCurtain* this, PlayState* play) {
 }
 
 void BgHidanCurtain_WaitForTimer(BgHidanCurtain* this, PlayState* play) {
-    DECR(this->timer);
+    if (GameInteractor_Should(VB_SWITCH_TIMER_TICK, true, this, &this->timer)) {
+        DECR(this->timer);
+    }
+
     if (this->timer == 0) {
         this->actionFunc = BgHidanCurtain_TurnOn;
     }
     if ((this->type == 1) || (this->type == 3)) {
-        func_8002F994(&this->actor, this->timer);
+        Actor_PlaySfx_FlaggedTimer(&this->actor, this->timer);
     }
 }
 
@@ -206,13 +210,13 @@ void BgHidanCurtain_Update(Actor* thisx, PlayState* play2) {
     BgHidanCurtainParams* hcParams = &sHCParams[this->size];
     f32 riseProgress;
 
-    if ((play->cameraPtrs[MAIN_CAM]->setting == CAM_SET_SLOW_CHEST_CS) ||
-        (play->cameraPtrs[MAIN_CAM]->setting == CAM_SET_TURN_AROUND)) {
+    if ((play->cameraPtrs[CAM_ID_MAIN]->setting == CAM_SET_SLOW_CHEST_CS) ||
+        (play->cameraPtrs[CAM_ID_MAIN]->setting == CAM_SET_TURN_AROUND)) {
         this->collider.base.atFlags &= ~AT_HIT;
     } else {
         if (this->collider.base.atFlags & AT_HIT) {
             this->collider.base.atFlags &= ~AT_HIT;
-            func_8002F71C(play, &this->actor, 5.0f, this->actor.yawTowardsPlayer, 1.0f);
+            Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 5.0f, this->actor.yawTowardsPlayer, 1.0f);
         }
         if ((this->type == 4) || (this->type == 5)) {
             this->actor.world.pos.y = (2.0f * this->actor.home.pos.y) - hcParams->riseDist - this->actor.world.pos.y;
@@ -229,8 +233,8 @@ void BgHidanCurtain_Update(Actor* thisx, PlayState* play2) {
             this->collider.dim.height = hcParams->height * riseProgress;
             CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
             CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);
-            if (gSaveContext.sceneSetupIndex <= 3) {
-                func_8002F974(&this->actor, NA_SE_EV_FIRE_PILLAR_S - SFX_FLAG);
+            if (gSaveContext.sceneLayer <= 3) {
+                Actor_PlaySfx_Flagged(&this->actor, NA_SE_EV_FIRE_PILLAR_S - SFX_FLAG);
             }
         } else if ((this->type == 1) && Flags_GetTreasure(play, this->treasureFlag)) {
             Actor_Kill(&this->actor);
@@ -250,11 +254,10 @@ void BgHidanCurtain_Draw(Actor* thisx, PlayState* play) {
     gDPSetEnvColor(POLY_XLU_DISP++, 255, 0, 0, 0);
 
     gSPSegment(POLY_XLU_DISP++, 0x08,
-               Gfx_TwoTexScroll(play->state.gfxCtx, 0, this->texScroll & 0x7F, 0, 0x20, 0x40, 1, 0,
-                                (this->texScroll * -0xF) & 0xFF, 0x20, 0x40));
+               Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, this->texScroll & 0x7F, 0, 0x20, 0x40, 1, 0,
+                                  (this->texScroll * -0xF) & 0xFF, 0x20, 0x40, 1, 0, 0, -0xF));
 
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     gSPDisplayList(POLY_XLU_DISP++, gEffFireCircleDL);
 

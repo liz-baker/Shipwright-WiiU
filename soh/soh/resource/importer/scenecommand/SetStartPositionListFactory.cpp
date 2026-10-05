@@ -1,15 +1,17 @@
+#include <tinyxml2.h>
+
 #include "soh/resource/importer/scenecommand/SetStartPositionListFactory.h"
 #include "soh/resource/type/scenecommand/SetStartPositionList.h"
 #include "soh/resource/logging/SceneCommandLoggers.h"
-#include "spdlog/spdlog.h"
 
 namespace SOH {
-std::shared_ptr<Ship::IResource> SetStartPositionListFactory::ReadResource(std::shared_ptr<Ship::ResourceInitData> initData,
-                                                                    std::shared_ptr<Ship::BinaryReader> reader) {
+std::shared_ptr<Ship::IResource>
+SetStartPositionListFactory::ReadResource(std::shared_ptr<Ship::ResourceInitData> initData,
+                                          std::shared_ptr<Ship::BinaryReader> reader) {
     auto setStartPositionList = std::make_shared<SetStartPositionList>(initData);
 
     ReadCommandId(setStartPositionList, reader);
-	
+
     setStartPositionList->numStartPositions = reader->ReadUInt32();
     setStartPositionList->startPositions.reserve(setStartPositionList->numStartPositions);
     for (uint32_t i = 0; i < setStartPositionList->numStartPositions; i++) {
@@ -34,8 +36,9 @@ std::shared_ptr<Ship::IResource> SetStartPositionListFactory::ReadResource(std::
     return setStartPositionList;
 }
 
-std::shared_ptr<Ship::IResource> SetStartPositionListFactoryXML::ReadResource(std::shared_ptr<Ship::ResourceInitData> initData,
-                                                                   tinyxml2::XMLElement* reader) {
+std::shared_ptr<Ship::IResource>
+SetStartPositionListFactoryXML::ReadResource(std::shared_ptr<Ship::ResourceInitData> initData,
+                                             tinyxml2::XMLElement* reader) {
     auto setStartPositionList = std::make_shared<SetStartPositionList>(initData);
 
     setStartPositionList->cmdId = SceneCommandID::SetStartPositionList;
@@ -60,7 +63,7 @@ std::shared_ptr<Ship::IResource> SetStartPositionListFactoryXML::ReadResource(st
         child = child->NextSiblingElement();
     }
 
-    setStartPositionList->numStartPositions = setStartPositionList->startPositions.size();
+    setStartPositionList->numStartPositions = static_cast<u32>(setStartPositionList->startPositions.size());
 
     return setStartPositionList;
 }

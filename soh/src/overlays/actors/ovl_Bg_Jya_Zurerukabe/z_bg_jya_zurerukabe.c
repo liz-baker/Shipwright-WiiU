@@ -8,7 +8,7 @@
 #include "objects/object_jya_obj/object_jya_obj.h"
 #include "vt.h"
 
-#define FLAGS ACTOR_FLAG_UPDATE_WHILE_CULLED
+#define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
 void BgJyaZurerukabe_Init(Actor* thisx, PlayState* play);
 void BgJyaZurerukabe_Destroy(Actor* thisx, PlayState* play);
@@ -60,8 +60,7 @@ static InitChainEntry sInitChain[] = {
     ICHAIN_F32(uncullZoneDownward, 1000, ICHAIN_STOP),
 };
 
-void BgJyaZurerukabe_InitDynaPoly(BgJyaZurerukabe* this, PlayState* play, CollisionHeader* collision,
-                                  s32 flag) {
+void BgJyaZurerukabe_InitDynaPoly(BgJyaZurerukabe* this, PlayState* play, CollisionHeader* collision, s32 flag) {
     s32 pad;
     CollisionHeader* colHeader = NULL;
     s32 pad2;
@@ -95,13 +94,13 @@ void func_8089B4C8(BgJyaZurerukabe* this, PlayState* play) {
             case 3:
             case 5:
                 if (fabsf(D_8089B9C0[D_8089BA30[i]]) > 1.0f) {
-                    func_8002F6D4(play, &this->dyna.actor, 1.5f, this->dyna.actor.shape.rot.y, 0.0f, 0);
+                    Actor_SetPlayerKnockbackLarge(play, &this->dyna.actor, 1.5f, this->dyna.actor.shape.rot.y, 0.0f, 0);
                 }
                 break;
             case 1:
             case 4:
                 if (fabsf(D_8089B9C0[D_8089BA30[i]] - D_8089B9C0[D_8089BA30[i + 1]]) > 1.0f) {
-                    func_8002F6D4(play, &this->dyna.actor, 1.5f, this->dyna.actor.shape.rot.y, 0.0f, 0);
+                    Actor_SetPlayerKnockbackLarge(play, &this->dyna.actor, 1.5f, this->dyna.actor.shape.rot.y, 0.0f, 0);
                 }
                 break;
         }
@@ -168,7 +167,7 @@ void func_8089B870(BgJyaZurerukabe* this, PlayState* play) {
     }
 
     D_8089B9C0[this->unk_168] = D_8089BA08[this->unk_168] * this->unk_16E;
-    func_8002F974(&this->dyna.actor, NA_SE_EV_ELEVATOR_MOVE - SFX_FLAG);
+    Actor_PlaySfx_Flagged(&this->dyna.actor, NA_SE_EV_ELEVATOR_MOVE - SFX_FLAG);
 }
 
 void BgJyaZurerukabe_Update(Actor* thisx, PlayState* play) {

@@ -115,9 +115,9 @@ s32 BgHidanHamstep_SpawnChildren(BgHidanHamstep* this, PlayState* play2) {
         params = (i + 1) & 0xFF;
         params |= (this->dyna.actor.params & 0xFF00);
 
-        step = (BgHidanHamstep*)Actor_SpawnAsChild(
-            &play->actorCtx, &step->dyna.actor, play, ACTOR_BG_HIDAN_HAMSTEP, pos.x, pos.y, pos.z,
-            this->dyna.actor.world.rot.x, this->dyna.actor.world.rot.y, this->dyna.actor.world.rot.z, params);
+        step = (BgHidanHamstep*)Actor_SpawnAsChild(&play->actorCtx, &step->dyna.actor, play, ACTOR_BG_HIDAN_HAMSTEP,
+                                                   pos.x, pos.y, pos.z, this->dyna.actor.world.rot.x,
+                                                   this->dyna.actor.world.rot.y, this->dyna.actor.world.rot.z, params);
 
         if (step == NULL) {
             return 0;
@@ -279,7 +279,7 @@ void func_80888734(BgHidanHamstep* this) {
 
 void func_808887C4(BgHidanHamstep* this, PlayState* play) {
     if (this->collider.base.acFlags & AC_HIT) {
-        OnePointCutscene_Init(play, 3310, 100, &this->dyna.actor, MAIN_CAM);
+        OnePointCutscene_Init(play, 3310, 100, &this->dyna.actor, CAM_ID_MAIN);
         Audio_PlayActorSound2(&this->dyna.actor, NA_SE_EV_HAMMER_SWITCH);
         this->collider.base.acFlags = AC_NONE;
         BgHidanHamstep_SetupAction(this, 1);
@@ -294,7 +294,7 @@ void func_80888860(BgHidanHamstep* this, PlayState* play) {
     s32 pad2;
     s32 quakeIndex;
 
-    Actor_MoveForward(&this->dyna.actor);
+    Actor_MoveXZGravity(&this->dyna.actor);
 
     if (((this->dyna.actor.world.pos.y - this->dyna.actor.home.pos.y) < (-20.0f - this->dyna.actor.minVelocityY)) &&
         (this->dyna.actor.velocity.y <= 0.0f)) {
@@ -306,14 +306,13 @@ void func_80888860(BgHidanHamstep* this, PlayState* play) {
         } else {
             this->dyna.actor.velocity.y *= -0.24f;
 
-
             if (this->unk_244 == 1) {
                 quakeIndex = Quake_Add(GET_ACTIVE_CAM(play), 3);
                 Quake_SetSpeed(quakeIndex, -15536);
                 Quake_SetQuakeValues(quakeIndex, 0, 0, 500, 0);
                 Quake_SetCountdown(quakeIndex, 20);
                 Audio_PlayActorSound2(&this->dyna.actor, NA_SE_EV_BLOCK_BOUND);
-                func_800AA000(this->dyna.actor.xyzDistToPlayerSq, 255, 20, 150);
+                Rumble_Request(this->dyna.actor.xyzDistToPlayerSq, 255, 20, 150);
                 func_80888638(this, play);
                 osSyncPrintf("A(%d)\n", this->dyna.actor.params);
             }
@@ -343,7 +342,7 @@ void func_80888A58(BgHidanHamstep* this, PlayState* play) {
     s32 pad2;
     s32 quakeIndex;
 
-    Actor_MoveForward(&this->dyna.actor);
+    Actor_MoveXZGravity(&this->dyna.actor);
     func_80888694(this, (BgHidanHamstep*)this->dyna.actor.parent);
 
     if (((this->dyna.actor.params & 0xFF) <= 0) || ((this->dyna.actor.params & 0xFF) >= 6)) {
@@ -364,7 +363,6 @@ void func_80888A58(BgHidanHamstep* this, PlayState* play) {
         } else {
             this->dyna.actor.velocity.y *= -0.24f;
 
-
             if (this->unk_244 == 1) {
                 quakeIndex = Quake_Add(GET_ACTIVE_CAM(play), 3);
                 Quake_SetSpeed(quakeIndex, -15536);
@@ -372,11 +370,11 @@ void func_80888A58(BgHidanHamstep* this, PlayState* play) {
                 Quake_SetCountdown(quakeIndex, 7);
 
                 Audio_PlayActorSound2(&this->dyna.actor, NA_SE_EV_BLOCK_BOUND);
-                func_800AA000(10000.0f, 255, 20, 150);
+                Rumble_Request(10000.0f, 255, 20, 150);
                 func_808884C8(this, play);
 
                 if ((this->dyna.actor.params & 0xFF) == 5) {
-                    func_80078884(NA_SE_SY_CORRECT_CHIME);
+                    Sfx_PlaySfxCentered(NA_SE_SY_CORRECT_CHIME);
                 }
 
                 osSyncPrintf("B(%d)\n", this->dyna.actor.params);
@@ -399,8 +397,7 @@ void BgHidanHamstep_Draw(Actor* thisx, PlayState* play) {
 
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
 
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     if ((thisx->params & 0xFF) == 0) {
         gSPDisplayList(POLY_OPA_DISP++, gFireTempleStoneStep1DL);

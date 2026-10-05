@@ -7,9 +7,9 @@
 #include "z_en_hs.h"
 #include "vt.h"
 #include "objects/object_hs/object_hs.h"
-#include "soh/Enhancements/randomizer/adult_trade_shuffle.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_FRIENDLY)
+#define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY)
 
 void EnHs_Init(Actor* thisx, PlayState* play);
 void EnHs_Destroy(Actor* thisx, PlayState* play);
@@ -79,25 +79,7 @@ void EnHs_Init(Actor* thisx, PlayState* play) {
         // "chicken shop (adult era)"
         osSyncPrintf(VT_FGCOL(CYAN) " ヒヨコの店(大人の時) \n" VT_RST);
         func_80A6E3A0(this, func_80A6E9AC);
-        bool shouldSpawn;
-        bool tradedMushroom = Flags_GetItemGetInf(ITEMGETINF_30);
-        if (IS_RANDO && Randomizer_GetSettingValue(RSK_SHUFFLE_ADULT_TRADE)) {
-            // To explain the logic because Fado and Grog are linked:
-            // - If you have Cojiro, then spawn Grog and not Fado.
-            // - If you don't have Cojiro but do have Odd Potion, spawn Fado and not Grog.
-            // - If you don't have either, spawn Grog if you haven't traded the Odd Mushroom.
-            // - If you don't have either but have traded the mushroom, don't spawn either.
-            if (PLAYER_HAS_SHUFFLED_ADULT_TRADE_ITEM(ITEM_COJIRO)) {
-                shouldSpawn = true;
-            } else if (PLAYER_HAS_SHUFFLED_ADULT_TRADE_ITEM(ITEM_ODD_POTION)) {
-                shouldSpawn = false;
-            } else {
-                shouldSpawn = !tradedMushroom;
-            }
-        } else {
-            shouldSpawn = !tradedMushroom;
-        }
-        if (!shouldSpawn) {
+        if (GameInteractor_Should(VB_DESPAWN_GROG, Flags_GetItemGetInf(ITEMGETINF_30), this)) {
             // "chicken shop closed"
             osSyncPrintf(VT_FGCOL(CYAN) " ヒヨコ屋閉店 \n" VT_RST);
             Actor_Kill(&this->actor);
@@ -116,8 +98,6 @@ void EnHs_Destroy(Actor* thisx, PlayState* play) {
     EnHs* this = (EnHs*)thisx;
 
     Collider_DestroyCylinder(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 s32 func_80A6E53C(EnHs* this, PlayState* play, u16 textId, EnHsActionFunc actionFunc) {
@@ -132,7 +112,7 @@ s32 func_80A6E53C(EnHs* this, PlayState* play, u16 textId, EnHsActionFunc action
     yawDiff = this->actor.yawTowardsPlayer - this->actor.shape.rot.y;
     if ((ABS(yawDiff) <= 0x2150) && (this->actor.xzDistToPlayer < 100.0f)) {
         this->unk_2A8 |= 1;
-        func_8002F2CC(&this->actor, play, 100.0f);
+        Actor_OfferTalk(&this->actor, play, 100.0f);
     }
 
     return 0;
@@ -148,11 +128,11 @@ void func_80A6E5EC(EnHs* this, PlayState* play) {
 
 void func_80A6E630(EnHs* this, PlayState* play) {
     if ((Message_GetState(&play->msgCtx) == TEXT_STATE_DONE) && Message_ShouldAdvance(play)) {
-        if (!IS_RANDO) {
-            func_80088AA0(180);
+        if (GameInteractor_Should(VB_TRADE_TIMER_ODD_MUSHROOM, true)) {
+            Interface_SetSubTimer(180);
+            gSaveContext.eventInf[1] &= ~1;
         }
         func_80A6E3A0(this, func_80A6E6B0);
-        gSaveContext.eventInf[1] &= ~1;
     }
 
     this->unk_2A8 |= 1;
@@ -175,19 +155,12 @@ void func_80A6E70C(EnHs* this, PlayState* play) {
 }
 
 void func_80A6E740(EnHs* this, PlayState* play) {
-    if (Actor_HasParent(&this->actor, play)) {
+    if (Actor_HasParent(&this->actor, play) || !GameInteractor_Should(VB_TRADE_COJIRO, true, this)) {
         this->actor.parent = NULL;
+        Flags_SetRandomizerInf(RAND_INF_ADULT_TRADES_LW_TRADE_COJIRO);
         func_80A6E3A0(this, func_80A6E630);
     } else {
-        if (IS_RANDO) {
-            GetItemEntry itemEntry = Randomizer_GetItemFromKnownCheck(RC_LW_TRADE_COJIRO, GI_ODD_MUSHROOM);
-            Randomizer_ConsumeAdultTradeItem(play, ITEM_COJIRO);
-            GiveItemEntryFromActor(&this->actor, play, itemEntry, 10000.0f, 50.0f);
-            Flags_SetRandomizerInf(RAND_INF_ADULT_TRADES_LW_TRADE_COJIRO);
-        } else {
-            s32 itemId = GI_ODD_MUSHROOM;
-            func_8002F434(&this->actor, play, itemId, 10000.0f, 50.0f);
-        }
+        Actor_OfferGetItem(&this->actor, play, GI_ODD_MUSHROOM, 10000.0f, 50.0f);
     }
 
     this->unk_2A8 |= 1;
@@ -198,14 +171,8 @@ void func_80A6E7BC(EnHs* this, PlayState* play) {
         switch (play->msgCtx.choiceIndex) {
             case 0:
                 func_80A6E3A0(this, func_80A6E740);
-                if (IS_RANDO) {
-                    GetItemEntry itemEntry = Randomizer_GetItemFromKnownCheck(RC_LW_TRADE_COJIRO, GI_ODD_MUSHROOM);
-                    Randomizer_ConsumeAdultTradeItem(play, ITEM_COJIRO);
-                    GiveItemEntryFromActor(&this->actor, play, itemEntry, 10000.0f, 50.0f);
-                    Flags_SetRandomizerInf(RAND_INF_ADULT_TRADES_LW_TRADE_COJIRO);
-                } else {
-                    s32 itemId = GI_ODD_MUSHROOM;
-                    func_8002F434(&this->actor, play, itemId, 10000.0f, 50.0f);
+                if (GameInteractor_Should(VB_TRADE_COJIRO, true, this)) {
+                    Actor_OfferGetItem(&this->actor, play, GI_ODD_MUSHROOM, 10000.0f, 50.0f);
                 }
                 break;
             case 1:
@@ -246,13 +213,13 @@ void func_80A6E9AC(EnHs* this, PlayState* play) {
     s16 yawDiff;
 
     if (Actor_ProcessTalkRequest(&this->actor, play)) {
-        if (func_8002F368(play) == 7) {
+        if (Actor_GetPlayerExchangeItemId(play) == 7) {
             player->actor.textId = 0x10B2;
             func_80A6E3A0(this, func_80A6E8CC);
             Animation_Change(&this->skelAnime, &object_hs_Anim_000304, 1.0f, 0.0f,
                              Animation_GetLastFrame(&object_hs_Anim_000304), ANIMMODE_LOOP, 8.0f);
             this->unk_2AA = 40;
-            func_80078884(NA_SE_SY_TRE_BOX_APPEAR);
+            Sfx_PlaySfxCentered(NA_SE_SY_TRE_BOX_APPEAR);
         } else {
             player->actor.textId = 0x10B1;
             func_80A6E3A0(this, func_80A6E6D8);
@@ -261,7 +228,7 @@ void func_80A6E9AC(EnHs* this, PlayState* play) {
         yawDiff = this->actor.yawTowardsPlayer - this->actor.shape.rot.y;
         this->actor.textId = 0x10B1;
         if ((ABS(yawDiff) <= 0x2150) && (this->actor.xzDistToPlayer < 100.0f)) {
-            func_8002F298(&this->actor, play, 100.0f, 7);
+            Actor_OfferTalkExchangeEquiCylinder(&this->actor, play, 100.0f, 7);
         }
     }
 }
@@ -272,7 +239,7 @@ void EnHs_Update(Actor* thisx, PlayState* play) {
 
     Collider_UpdateCylinder(thisx, &this->collider);
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);
-    Actor_MoveForward(&this->actor);
+    Actor_MoveXZGravity(&this->actor);
     Actor_UpdateBgCheckInfo(play, &this->actor, 0.0f, 0.0f, 0.0f, 4);
     if (SkelAnime_Update(&this->skelAnime)) {
         this->skelAnime.curFrame = 0.0f;
@@ -281,7 +248,7 @@ void EnHs_Update(Actor* thisx, PlayState* play) {
     this->actionFunc(this, play);
 
     if (this->unk_2A8 & 1) {
-        func_80038290(play, &this->actor, &this->unk_29C, &this->unk_2A2, this->actor.focus.pos);
+        Actor_TrackPlayer(play, &this->actor, &this->unk_29C, &this->unk_2A2, this->actor.focus.pos);
         this->unk_2A8 &= ~1;
     } else {
         Math_SmoothStepToS(&this->unk_29C.x, 12800, 6, 6200, 100);

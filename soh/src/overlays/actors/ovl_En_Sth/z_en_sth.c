@@ -11,7 +11,7 @@
 #include <assert.h>
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_WHILE_CULLED)
+#define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
 void EnSth_Init(Actor* thisx, PlayState* play);
 void EnSth_Destroy(Actor* thisx, PlayState* play);
@@ -64,12 +64,8 @@ static s16 sObjectIds[6] = {
 };
 
 static FlexSkeletonHeader* sSkeletons[6] = {
-    &object_ahg_Skel_0000F0,
-    &object_boj_Skel_0000F0,
-    &object_boj_Skel_0000F0,
-    &object_boj_Skel_0000F0,
-    &object_boj_Skel_0000F0,
-    &object_boj_Skel_0000F0,
+    &object_ahg_Skel_0000F0, &object_boj_Skel_0000F0, &object_boj_Skel_0000F0,
+    &object_boj_Skel_0000F0, &object_boj_Skel_0000F0, &object_boj_Skel_0000F0,
 };
 
 static AnimationHeader* sAnimations[6] = {
@@ -172,8 +168,8 @@ void EnSth_SetupAfterObjectLoaded(EnSth* this, PlayState* play) {
 
     EnSth_SetupShapeColliderUpdate2AndDraw(this, play);
     gSegments[6] = PHYSICAL_TO_VIRTUAL(play->objectCtx.status[this->objectBankIdx].segment);
-    SkelAnime_InitFlex(play, &this->skelAnime, sSkeletons[this->actor.params], NULL, this->jointTable,
-                       this->morphTable, 16);
+    SkelAnime_InitFlex(play, &this->skelAnime, sSkeletons[this->actor.params], NULL, this->jointTable, this->morphTable,
+                       16);
     Animation_PlayLoop(&this->skelAnime, sAnimations[this->actor.params]);
 
     this->eventFlag = sEventFlags[this->actor.params];
@@ -189,8 +185,6 @@ void EnSth_Destroy(Actor* thisx, PlayState* play) {
     EnSth* this = (EnSth*)thisx;
 
     Collider_DestroyCylinder(play, &this->collider);
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void EnSth_WaitForObjectLoaded(EnSth* this, PlayState* play) {
@@ -207,7 +201,7 @@ void EnSth_FacePlayer(EnSth* this, PlayState* play) {
     if (ABS(diffRot) <= 0x4000) {
         Math_SmoothStepToS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 6, 0xFA0, 0x64);
         this->actor.world.rot.y = this->actor.shape.rot.y;
-        func_80038290(play, &this->actor, &this->headRot, &this->unk_2AC, this->actor.focus.pos);
+        Actor_TrackPlayer(play, &this->actor, &this->headRot, &this->unk_2AC, this->actor.focus.pos);
     } else {
         if (diffRot < 0) {
             Math_SmoothStepToS(&this->headRot.y, -0x2000, 6, 0x1838, 0x100);
@@ -223,7 +217,7 @@ void EnSth_LookAtPlayer(EnSth* this, PlayState* play) {
     s16 diffRot = this->actor.yawTowardsPlayer - this->actor.shape.rot.y;
 
     if ((ABS(diffRot) <= 0x4300) && (this->actor.xzDistToPlayer < 100.0f)) {
-        func_80038290(play, &this->actor, &this->headRot, &this->unk_2AC, this->actor.focus.pos);
+        Actor_TrackPlayer(play, &this->actor, &this->headRot, &this->unk_2AC, this->actor.focus.pos);
     } else {
         Math_SmoothStepToS(&this->headRot.x, 0, 6, 0x1838, 0x64);
         Math_SmoothStepToS(&this->headRot.y, 0, 6, 0x1838, 0x64);
@@ -249,7 +243,7 @@ void EnSth_ParentRewardObtainedWait(EnSth* this, PlayState* play) {
     } else {
         this->actor.textId = 0x23;
         if (this->actor.xzDistToPlayer < 100.0f) {
-            func_8002F2CC(&this->actor, play, 100.0f);
+            Actor_OfferTalk(&this->actor, play, 100.0f);
         }
     }
     EnSth_LookAtPlayer(this, play);
@@ -257,66 +251,35 @@ void EnSth_ParentRewardObtainedWait(EnSth* this, PlayState* play) {
 
 void EnSth_GivePlayerItem(EnSth* this, PlayState* play) {
     u16 getItemId = sGetItemIds[this->actor.params];
-    GetItemEntry getItemEntry = (GetItemEntry)GET_ITEM_NONE;
-    
-    if (IS_RANDO) {
-        switch (getItemId) {
-            case GI_RUPEE_GOLD:
-                if (!Flags_GetRandomizerInf(RAND_INF_KAK_100_GOLD_SKULLTULA_REWARD)) {
-                    getItemEntry = Randomizer_GetItemFromKnownCheck(RC_KAK_100_GOLD_SKULLTULA_REWARD, GI_RUPEE_GOLD);
-                    Flags_SetRandomizerInf(RAND_INF_KAK_100_GOLD_SKULLTULA_REWARD);
-                }
-                break;
-            case GI_WALLET_ADULT:
-                getItemEntry = Randomizer_GetItemFromKnownCheck(RC_KAK_10_GOLD_SKULLTULA_REWARD, GI_WALLET_ADULT);
-                break;
-            case GI_STONE_OF_AGONY:
-                getItemEntry = Randomizer_GetItemFromKnownCheck(RC_KAK_20_GOLD_SKULLTULA_REWARD, GI_STONE_OF_AGONY);
-                break;
-            case GI_WALLET_GIANT:
-                getItemEntry = Randomizer_GetItemFromKnownCheck(RC_KAK_30_GOLD_SKULLTULA_REWARD, GI_WALLET_GIANT);
-                break;
-            case GI_BOMBCHUS_10:
-                getItemEntry = Randomizer_GetItemFromKnownCheck(RC_KAK_40_GOLD_SKULLTULA_REWARD, GI_BOMBCHUS_10);
-                break;
-            case GI_HEART_PIECE:
-                getItemEntry = Randomizer_GetItemFromKnownCheck(RC_KAK_50_GOLD_SKULLTULA_REWARD, GI_HEART_PIECE);
-                break;
-        }
-        getItemId = getItemEntry.getItemId;
-    } else {
-        switch (this->actor.params) {
-            case 1:
-            case 3:
-                switch (CUR_UPG_VALUE(UPG_WALLET)) {
-                    case 0:
-                        getItemId = GI_WALLET_ADULT;
-                        break;
 
-                    case 1:
-                        getItemId = GI_WALLET_GIANT;
-                        break;
-                }
-                break;
-        }
+    switch (this->actor.params) {
+        case 1:
+        case 3:
+            switch (CUR_UPG_VALUE(UPG_WALLET)) {
+                case 0:
+                    getItemId = GI_WALLET_ADULT;
+                    break;
+
+                case 1:
+                    getItemId = GI_WALLET_GIANT;
+                    break;
+            }
+            break;
     }
 
-    if (!IS_RANDO || getItemEntry.getItemId == GI_NONE) {
-        func_8002F434(&this->actor, play, getItemId, 10000.0f, 50.0f);
-    } else {
-        GiveItemEntryFromActor(&this->actor, play, getItemEntry, 10000.0f, 50.0f);
-    }
+    Actor_OfferGetItem(&this->actor, play, getItemId, 10000.0f, 50.0f);
 }
 
 void EnSth_GiveReward(EnSth* this, PlayState* play) {
-    if (Actor_HasParent(&this->actor, play)) {
+    if (Actor_HasParent(&this->actor, play) || !GameInteractor_Should(VB_GIVE_ITEM_FROM_SKULLTULA_REWARD, true, this)) {
         this->actor.parent = NULL;
         EnSth_SetupAction(this, EnSth_RewardObtainedTalk);
         gSaveContext.eventChkInf[EVENTCHKINF_SKULLTULA_REWARD_INDEX] |= this->eventFlag;
         if (this->eventFlag != 0) {
-            GameInteractor_ExecuteOnFlagSet(FLAG_EVENT_CHECK_INF, (EVENTCHKINF_SKULLTULA_REWARD_INDEX << 4) + sEventFlagsShift[this->actor.params]);
+            GameInteractor_ExecuteOnFlagSet(FLAG_EVENT_CHECK_INF, (EVENTCHKINF_SKULLTULA_REWARD_INDEX << 4) +
+                                                                      sEventFlagsShift[this->actor.params]);
         }
-    } else {
+    } else if (GameInteractor_Should(VB_GIVE_ITEM_FROM_SKULLTULA_REWARD, true, this)) {
         EnSth_GivePlayerItem(this, play);
     }
     EnSth_FacePlayer(this, play);
@@ -326,7 +289,9 @@ void EnSth_RewardUnobtainedTalk(EnSth* this, PlayState* play) {
     if ((Message_GetState(&play->msgCtx) == TEXT_STATE_EVENT) && Message_ShouldAdvance(play)) {
         Message_CloseTextbox(play);
         EnSth_SetupAction(this, EnSth_GiveReward);
-        EnSth_GivePlayerItem(this, play);
+        if (GameInteractor_Should(VB_GIVE_ITEM_FROM_SKULLTULA_REWARD, true, this)) {
+            EnSth_GivePlayerItem(this, play);
+        }
     }
     EnSth_FacePlayer(this, play);
 }
@@ -341,7 +306,7 @@ void EnSth_RewardUnobtainedWait(EnSth* this, PlayState* play) {
             this->actor.textId = 0x21;
         }
         if (this->actor.xzDistToPlayer < 100.0f) {
-            func_8002F2CC(&this->actor, play, 100.0f);
+            Actor_OfferTalk(&this->actor, play, 100.0f);
         }
     }
     EnSth_LookAtPlayer(this, play);
@@ -357,7 +322,7 @@ void EnSth_ChildRewardObtainedWait(EnSth* this, PlayState* play) {
             this->actor.textId = 0x1F;
         }
         if (this->actor.xzDistToPlayer < 100.0f) {
-            func_8002F2CC(&this->actor, play, 100.0f);
+            Actor_OfferTalk(&this->actor, play, 100.0f);
         }
     }
     EnSth_LookAtPlayer(this, play);
@@ -375,7 +340,7 @@ void EnSth_Update2(Actor* thisx, PlayState* play) {
 
     Collider_UpdateCylinder(&this->actor, &this->collider);
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);
-    Actor_MoveForward(&this->actor);
+    Actor_MoveXZGravity(&this->actor);
     Actor_UpdateBgCheckInfo(play, &this->actor, 0.0f, 0.0f, 0.0f, 4);
     if (SkelAnime_Update(&this->skelAnime)) {
         this->skelAnime.curFrame = 0.0f;

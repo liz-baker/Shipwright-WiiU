@@ -1,11 +1,13 @@
+#include <tinyxml2.h>
+
 #include "soh/resource/importer/scenecommand/SetLightingSettingsFactory.h"
 #include "soh/resource/type/scenecommand/SetLightingSettings.h"
 #include "soh/resource/logging/SceneCommandLoggers.h"
-#include "spdlog/spdlog.h"
 
 namespace SOH {
-std::shared_ptr<Ship::IResource> SetLightingSettingsFactory::ReadResource(std::shared_ptr<Ship::ResourceInitData> initData,
-                                                                   std::shared_ptr<Ship::BinaryReader> reader) {
+std::shared_ptr<Ship::IResource>
+SetLightingSettingsFactory::ReadResource(std::shared_ptr<Ship::ResourceInitData> initData,
+                                         std::shared_ptr<Ship::BinaryReader> reader) {
     auto setLightingSettings = std::make_shared<SetLightingSettings>(initData);
 
     ReadCommandId(setLightingSettings, reader);
@@ -51,8 +53,9 @@ std::shared_ptr<Ship::IResource> SetLightingSettingsFactory::ReadResource(std::s
     return setLightingSettings;
 }
 
-std::shared_ptr<Ship::IResource> SetLightingSettingsFactoryXML::ReadResource(std::shared_ptr<Ship::ResourceInitData> initData,
-                                                                   tinyxml2::XMLElement* reader) {
+std::shared_ptr<Ship::IResource>
+SetLightingSettingsFactoryXML::ReadResource(std::shared_ptr<Ship::ResourceInitData> initData,
+                                            tinyxml2::XMLElement* reader) {
     auto setLightingSettings = std::make_shared<SetLightingSettings>(initData);
 
     setLightingSettings->cmdId = SceneCommandID::SetLightingSettings;

@@ -7,8 +7,9 @@
 #include "z_en_kakasi3.h"
 #include "vt.h"
 #include "objects/object_ka/object_ka.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_NO_FREEZE_OCARINA)
+#define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_DURING_OCARINA)
 
 void EnKakasi3_Init(Actor* thisx, PlayState* play);
 void EnKakasi3_Destroy(Actor* thisx, PlayState* play);
@@ -77,7 +78,7 @@ void EnKakasi3_Init(Actor* thisx, PlayState* play) {
     Collider_InitCylinder(play, &this->collider);
     Collider_SetCylinder(play, &this->collider, &this->actor, &sCylinderInit);
     SkelAnime_InitFlex(play, &this->skelAnime, &object_ka_Skel_0065B0, &object_ka_Anim_000214, NULL, NULL, 0);
-    this->actor.flags |= ACTOR_FLAG_DRAGGED_BY_HOOKSHOT;
+    this->actor.flags |= ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER;
     this->rot = this->actor.world.rot;
     this->actor.colChkInfo.mass = MASS_IMMOVABLE;
     Actor_SetScale(&this->actor, 0.01f);
@@ -109,30 +110,30 @@ void func_80A90EBC(EnKakasi3* this, PlayState* play, s32 arg) {
         ocarinaNote = this->unk_1A6;
     }
     switch (ocarinaNote) {
-        case OCARINA_NOTE_D4:
+        case OCARINA_BTN_A:
             this->unk_19A++;
             if (this->unk_1A4 == 0) {
                 this->unk_1A4 = 1;
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_KAKASHI_ROLL);
             }
             break;
-        case OCARINA_NOTE_F4:
+        case OCARINA_BTN_C_DOWN:
             this->unk_19A++;
             this->unk_1B8 = 1.0f;
             break;
-        case OCARINA_NOTE_A4:
+        case OCARINA_BTN_C_RIGHT:
             this->unk_19A++;
             if (this->unk_1AE == 0x0) {
                 this->unk_1AE = 0x1388;
             }
             break;
-        case OCARINA_NOTE_B4:
+        case OCARINA_BTN_C_LEFT:
             this->unk_19A++;
             if (this->unk_1AA == 0x0) {
                 this->unk_1AA = 0x1388;
             }
             break;
-        case OCARINA_NOTE_D5:
+        case OCARINA_BTN_C_UP:
             this->unk_19A++;
             this->unk_1B8 = 2.0f;
             break;
@@ -144,7 +145,7 @@ void func_80A90EBC(EnKakasi3* this, PlayState* play, s32 arg) {
 
     if (this->unk_19A != 0) {
         this->actor.gravity = -1.0f;
-        if (this->unk_19A == 8 && (this->actor.bgCheckFlags & 1)) {
+        if (this->unk_19A == 8 && (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
             this->actor.velocity.y = 3.0f;
             Audio_PlayActorSound2(&this->actor, NA_SE_IT_KAKASHI_JUMP);
         }
@@ -233,7 +234,7 @@ void func_80A91348(EnKakasi3* this, PlayState* play) {
                 if (!this->unk_194) {
 
                     if (player->stateFlags2 & PLAYER_STATE2_ATTEMPT_PLAY_FOR_ACTOR) {
-                        this->camId = OnePointCutscene_Init(play, 2260, -99, &this->actor, MAIN_CAM);
+                        this->camId = OnePointCutscene_Init(play, 2260, -99, &this->actor, CAM_ID_MAIN);
                         play->msgCtx.msgMode = MSGMODE_PAUSED;
                         this->dialogState = TEXT_STATE_EVENT;
                         this->unk_1B8 = 0.0f;
@@ -248,7 +249,7 @@ void func_80A91348(EnKakasi3* this, PlayState* play) {
                 } else if (gSaveContext.scarecrowSpawnSongSet && !this->unk_195) {
 
                     if (player->stateFlags2 & PLAYER_STATE2_ATTEMPT_PLAY_FOR_ACTOR) {
-                        this->camId = OnePointCutscene_Init(play, 2260, -99, &this->actor, MAIN_CAM);
+                        this->camId = OnePointCutscene_Init(play, 2260, -99, &this->actor, CAM_ID_MAIN);
                         play->msgCtx.msgMode = MSGMODE_PAUSED;
                         this->dialogState = TEXT_STATE_EVENT;
                         this->unk_1B8 = 0.0f;
@@ -261,7 +262,7 @@ void func_80A91348(EnKakasi3* this, PlayState* play) {
                         player->stateFlags2 |= PLAYER_STATE2_NEAR_OCARINA_ACTOR;
                     }
                 }
-                func_8002F2CC(&this->actor, play, 100.0f);
+                Actor_OfferTalk(&this->actor, play, 100.0f);
             }
         }
     }
@@ -296,7 +297,7 @@ void func_80A91620(EnKakasi3* this, PlayState* play) {
     if (play->msgCtx.ocarinaMode == OCARINA_MODE_03 && play->msgCtx.msgMode == MSGMODE_NONE) {
         this->dialogState = TEXT_STATE_EVENT;
         Message_StartTextbox(play, 0x40A5, NULL);
-        func_8002DF54(play, NULL, 8);
+        Player_SetCsActionWithHaltedActors(play, NULL, 8);
         this->actionFunc = func_80A91A90;
         return;
     }
@@ -315,7 +316,7 @@ void func_80A91760(EnKakasi3* this, PlayState* play) {
         play->msgCtx.msgMode = MSGMODE_PAUSED;
         func_8010BD58(play, OCARINA_ACTION_SCARECROW_PLAYBACK);
         this->actionFunc = func_80A917FC;
-        this->camId = OnePointCutscene_Init(play, 2280, -99, &this->actor, MAIN_CAM);
+        this->camId = OnePointCutscene_Init(play, 2280, -99, &this->actor, CAM_ID_MAIN);
     }
 }
 
@@ -354,7 +355,7 @@ void func_80A918E4(EnKakasi3* this, PlayState* play) {
         this->dialogState = TEXT_STATE_EVENT;
         OnePointCutscene_EndCutscene(play, this->camId);
         this->camId = SUBCAM_NONE;
-        func_8002DF54(play, NULL, 8);
+        Player_SetCsActionWithHaltedActors(play, NULL, 8);
         this->actionFunc = func_80A91A90;
         return;
     }
@@ -364,13 +365,12 @@ void func_80A918E4(EnKakasi3* this, PlayState* play) {
         if (BREG(3) != 0) {
             osSyncPrintf("\n\n");
             // "With this, other guys are OK! That's it!"
-            osSyncPrintf(VT_FGCOL(CYAN) "☆☆☆☆☆ これで、他の奴もＯＫ！だ！ ☆☆☆☆☆ %d\n" VT_RST,
-                         play->msgCtx.ocarinaMode);
+            osSyncPrintf(VT_FGCOL(CYAN) "☆☆☆☆☆ これで、他の奴もＯＫ！だ！ ☆☆☆☆☆ %d\n" VT_RST, play->msgCtx.ocarinaMode);
         }
         this->unk_195 = true;
         Message_StartTextbox(play, 0x40A7, NULL);
         this->dialogState = TEXT_STATE_EVENT;
-        func_8002DF54(play, NULL, 8);
+        Player_SetCsActionWithHaltedActors(play, NULL, 8);
         this->actionFunc = func_80A91A90;
         return;
     }
@@ -384,11 +384,12 @@ void func_80A918E4(EnKakasi3* this, PlayState* play) {
 void func_80A91A90(EnKakasi3* this, PlayState* play) {
     func_80A90E28(this);
     SkelAnime_Update(&this->skelAnime);
-    func_8002DF54(play, NULL, 8);
+    Player_SetCsActionWithHaltedActors(play, NULL, 8);
 
     if (this->dialogState == Message_GetState(&play->msgCtx) && Message_ShouldAdvance(play)) {
         if (this->unk_195) {
-            if (!Flags_GetEventChkInf(EVENTCHKINF_PLAYED_SONG_FOR_SCARECROW_AS_ADULT)) {
+            if (GameInteractor_Should(VB_GIVE_ITEM_FROM_SCARECROW,
+                                      !Flags_GetEventChkInf(EVENTCHKINF_PLAYED_SONG_FOR_SCARECROW_AS_ADULT))) {
                 Flags_SetEventChkInf(EVENTCHKINF_PLAYED_SONG_FOR_SCARECROW_AS_ADULT);
             }
         }
@@ -400,7 +401,7 @@ void func_80A91A90(EnKakasi3* this, PlayState* play) {
         }
         Message_CloseTextbox(play);
         play->msgCtx.ocarinaMode = OCARINA_MODE_04;
-        func_8002DF54(play, NULL, 7);
+        Player_SetCsActionWithHaltedActors(play, NULL, 7);
         this->actionFunc = func_80A911F0;
     }
 }
@@ -426,7 +427,7 @@ void EnKakasi3_Update(Actor* thisx, PlayState* play) {
 
     Actor_SetFocus(&this->actor, 60.0f);
     this->actionFunc(this, play);
-    Actor_MoveForward(&this->actor);
+    Actor_MoveXZGravity(&this->actor);
     Actor_UpdateBgCheckInfo(play, &this->actor, 50.0f, 50.0f, 100.0f, 28);
     Collider_UpdateCylinder(&this->actor, &this->collider);
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);

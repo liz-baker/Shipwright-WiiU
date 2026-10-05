@@ -1,6 +1,8 @@
-#include "Resource.h"
-#include "soh/OTRGlobals.h"
+#pragma once
+
+#include <ship/resource/Resource.h>
+#include "soh/cvar_prefixes.h"
 
 namespace SOH {
-    void LogPathAsXML(std::shared_ptr<Ship::IResource> resource);
+void LogPathAsXML(std::shared_ptr<Ship::IResource> resource);
 }

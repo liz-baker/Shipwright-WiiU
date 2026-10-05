@@ -1,10 +1,8 @@
 #pragma once
 
-#include <cstdint>
-#include <vector>
+#include <stdint.h>
 #include <memory>
-#include "Resource.h"
-#include <libultraship/libultra/types.h>
+#include <ship/resource/Resource.h>
 
 namespace SOH {
 
@@ -48,9 +46,10 @@ enum class SceneCommandID : uint8_t {
 };
 
 class ISceneCommand : public Ship::IResource {
-public:
+  public:
     using IResource::IResource;
-    ISceneCommand() : IResource(std::shared_ptr<Ship::ResourceInitData>()) {}
+    ISceneCommand() : IResource(std::shared_ptr<Ship::ResourceInitData>()) {
+    }
     SceneCommandID cmdId;
 };
 
@@ -63,4 +62,4 @@ template <class T> class SceneCommand : public ISceneCommand {
     }
 };
 
-}; // namespace LUS
+}; // namespace SOH

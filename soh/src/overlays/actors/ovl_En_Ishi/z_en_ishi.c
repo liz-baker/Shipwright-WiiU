@@ -7,10 +7,13 @@
 #include "z_en_ishi.h"
 #include "overlays/effects/ovl_Effect_Ss_Kakera/z_eff_ss_kakera.h"
 #include "objects/gameplay_field_keep/gameplay_field_keep.h"
+#include "soh/OTRGlobals.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/savestate_serialize.h"
 
 #include "vt.h"
 
-#define FLAGS ACTOR_FLAG_ALWAYS_THROWN
+#define FLAGS ACTOR_FLAG_THROW_ONLY
 
 void EnIshi_Init(Actor* thisx, PlayState* play);
 void EnIshi_Destroy(Actor* thisx, PlayState* play);
@@ -29,8 +32,14 @@ void EnIshi_SpawnFragmentsLarge(EnIshi* this, PlayState* play);
 void EnIshi_SpawnDustSmall(EnIshi* this, PlayState* play);
 void EnIshi_SpawnDustLarge(EnIshi* this, PlayState* play);
 
-s16 sRockRotSpeedX = 0;
-s16 sRockRotSpeedY = 0;
+static s16 sRotSpeedX = 0;
+static s16 sRotSpeedY = 0;
+
+#define EN_ISHI_SHIP_SAVESTATE_FIELDS(F) \
+    F(sRotSpeedX)                        \
+    F(sRotSpeedY)
+
+SHIP_SAVESTATE_DEFINE(EnIshi, EN_ISHI_SHIP_SAVESTATE_FIELDS)
 
 const ActorInit En_Ishi_InitVars = {
     ACTOR_EN_ISHI,
@@ -147,11 +156,11 @@ void EnIshi_SpawnFragmentsSmall(EnIshi* this, PlayState* play) {
         pos.y = this->actor.world.pos.y + (Rand_ZeroOne() * 5.0f) + 5.0f;
         pos.z = this->actor.world.pos.z + (Rand_ZeroOne() - 0.5f) * 8.0f;
         Math_Vec3f_Copy(&velocity, &this->actor.velocity);
-        if (this->actor.bgCheckFlags & 1) {
+        if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) {
             velocity.x *= 0.8f;
             velocity.y *= -0.8f;
             velocity.z *= 0.8f;
-        } else if (this->actor.bgCheckFlags & 8) {
+        } else if (this->actor.bgCheckFlags & BGCHECKFLAG_WALL) {
             velocity.x *= -0.8f;
             velocity.y *= 0.8f;
             velocity.z *= -0.8f;
@@ -210,8 +219,8 @@ void EnIshi_SpawnFragmentsLarge(EnIshi* this, PlayState* play) {
             phi_v0 = 69;
             phi_v1 = -320;
         }
-        EffectSsKakera_Spawn(play, &pos, &velocity, &this->actor.world.pos, phi_v1, phi_v0, 30, 5, 0, scales[i], 5,
-                             2, 70, KAKERA_COLOR_WHITE, OBJECT_GAMEPLAY_FIELD_KEEP, gSilverRockFragmentsDL);
+        EffectSsKakera_Spawn(play, &pos, &velocity, &this->actor.world.pos, phi_v1, phi_v0, 30, 5, 0, scales[i], 5, 2,
+                             70, KAKERA_COLOR_WHITE, OBJECT_GAMEPLAY_FIELD_KEEP, gSilverRockFragmentsDL);
     }
 }
 
@@ -219,11 +228,11 @@ void EnIshi_SpawnDustSmall(EnIshi* this, PlayState* play) {
     Vec3f pos;
 
     Math_Vec3f_Copy(&pos, &this->actor.world.pos);
-    if (this->actor.bgCheckFlags & 1) {
+    if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) {
         pos.x += 2.0f * this->actor.velocity.x;
         pos.y -= 2.0f * this->actor.velocity.y;
         pos.z += 2.0f * this->actor.velocity.z;
-    } else if (this->actor.bgCheckFlags & 8) {
+    } else if (this->actor.bgCheckFlags & BGCHECKFLAG_WALL) {
         pos.x -= 2.0f * this->actor.velocity.x;
         pos.y += 2.0f * this->actor.velocity.y;
         pos.z -= 2.0f * this->actor.velocity.z;
@@ -235,11 +244,11 @@ void EnIshi_SpawnDustLarge(EnIshi* this, PlayState* play) {
     Vec3f pos;
 
     Math_Vec3f_Copy(&pos, &this->actor.world.pos);
-    if (this->actor.bgCheckFlags & 1) {
+    if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) {
         pos.x += 2.0f * this->actor.velocity.x;
         pos.y -= 2.0f * this->actor.velocity.y;
         pos.z += 2.0f * this->actor.velocity.z;
-    } else if (this->actor.bgCheckFlags & 8) {
+    } else if (this->actor.bgCheckFlags & BGCHECKFLAG_WALL) {
         pos.x -= 2.0f * this->actor.velocity.x;
         pos.y += 2.0f * this->actor.velocity.y;
         pos.z -= 2.0f * this->actor.velocity.z;
@@ -250,7 +259,7 @@ void EnIshi_SpawnDustLarge(EnIshi* this, PlayState* play) {
 void EnIshi_DropCollectible(EnIshi* this, PlayState* play) {
     s16 dropParams;
 
-    if ((this->actor.params & 1) == ROCK_SMALL) {
+    if (GameInteractor_Should(VB_ROCK_DROP_ITEM, (this->actor.params & 1) == ROCK_SMALL, this)) {
         dropParams = (this->actor.params >> 8) & 0xF;
 
         if (dropParams >= 0xD) {
@@ -281,7 +290,7 @@ void EnIshi_SpawnBugs(EnIshi* this, PlayState* play) {
 
     for (i = 0; i < 3; i++) {
         Actor* bug = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_INSECT, this->actor.world.pos.x,
-                                 this->actor.world.pos.y, this->actor.world.pos.z, 0, Rand_ZeroOne() * 0xFFFF, 0, 1, true);
+                                 this->actor.world.pos.y, this->actor.world.pos.z, 0, Rand_ZeroOne() * 0xFFFF, 0, 1);
 
         if (bug == NULL) {
             break;
@@ -379,9 +388,9 @@ void EnIshi_Wait(EnIshi* this, PlayState* play) {
             if (this->actor.xzDistToPlayer < 90.0f) {
                 // GI_NONE in these cases allows the player to lift the actor
                 if (type == ROCK_LARGE) {
-                    func_8002F434(&this->actor, play, GI_NONE, 80.0f, 20.0f);
+                    Actor_OfferGetItem(&this->actor, play, GI_NONE, 80.0f, 20.0f);
                 } else {
-                    func_8002F434(&this->actor, play, GI_NONE, 50.0f, 10.0f);
+                    Actor_OfferGetItem(&this->actor, play, GI_NONE, 50.0f, 10.0f);
                 }
             }
         }
@@ -391,7 +400,7 @@ void EnIshi_Wait(EnIshi* this, PlayState* play) {
 void EnIshi_SetupLiftedUp(EnIshi* this) {
     this->actionFunc = EnIshi_LiftedUp;
     this->actor.room = -1;
-    this->actor.flags |= ACTOR_FLAG_UPDATE_WHILE_CULLED;
+    this->actor.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
 }
 
 void EnIshi_LiftedUp(EnIshi* this, PlayState* play) {
@@ -403,7 +412,7 @@ void EnIshi_LiftedUp(EnIshi* this, PlayState* play) {
         EnIshi_SetupFly(this);
         EnIshi_Fall(this);
         func_80A7ED94(&this->actor.velocity, D_80A7FA28[this->actor.params & 1]);
-        func_8002D7EC(&this->actor);
+        Actor_UpdatePos(&this->actor);
         Actor_UpdateBgCheckInfo(play, &this->actor, 7.5f, 35.0f, 0.0f, 0xC5);
     }
 }
@@ -412,11 +421,11 @@ void EnIshi_SetupFly(EnIshi* this) {
     this->actor.velocity.x = Math_SinS(this->actor.world.rot.y) * this->actor.speedXZ;
     this->actor.velocity.z = Math_CosS(this->actor.world.rot.y) * this->actor.speedXZ;
     if ((this->actor.params & 1) == ROCK_SMALL) {
-        sRockRotSpeedX = (Rand_ZeroOne() - 0.5f) * 16000.0f;
-        sRockRotSpeedY = (Rand_ZeroOne() - 0.5f) * 2400.0f;
+        sRotSpeedX = (Rand_ZeroOne() - 0.5f) * 16000.0f;
+        sRotSpeedY = (Rand_ZeroOne() - 0.5f) * 2400.0f;
     } else {
-        sRockRotSpeedX = (Rand_ZeroOne() - 0.5f) * 8000.0f;
-        sRockRotSpeedY = (Rand_ZeroOne() - 0.5f) * 1600.0f;
+        sRotSpeedX = (Rand_ZeroOne() - 0.5f) * 8000.0f;
+        sRotSpeedY = (Rand_ZeroOne() - 0.5f) * 1600.0f;
     }
     this->actor.colChkInfo.mass = 240;
     this->actionFunc = EnIshi_Fly;
@@ -442,7 +451,7 @@ void EnIshi_Fly(EnIshi* this, PlayState* play) {
             Quake_SetSpeed(quakeIdx, -0x3CB0);
             Quake_SetQuakeValues(quakeIdx, 3, 0, 0, 0);
             Quake_SetCountdown(quakeIdx, 7);
-            func_800AA000(this->actor.xyzDistToPlayerSq, 0xFF, 0x14, 0x96);
+            Rumble_Request(this->actor.xyzDistToPlayerSq, 0xFF, 0x14, 0x96);
         }
         Actor_Kill(&this->actor);
         return;
@@ -462,17 +471,17 @@ void EnIshi_Fly(EnIshi* this, PlayState* play) {
             EffectSsGRipple_Spawn(play, &contactPos, 500, 1300, 8);
         }
         this->actor.minVelocityY = -6.0f;
-        sRockRotSpeedX >>= 2;
-        sRockRotSpeedY >>= 2;
+        sRotSpeedX >>= 2;
+        sRotSpeedY >>= 2;
         SoundSource_PlaySfxAtFixedWorldPos(play, &this->actor.world.pos, 40, NA_SE_EV_DIVE_INTO_WATER_L);
         this->actor.bgCheckFlags &= ~0x40;
     }
     Math_StepToF(&this->actor.shape.yOffset, 0.0f, 2.0f);
     EnIshi_Fall(this);
     func_80A7ED94(&this->actor.velocity, D_80A7FA28[type]);
-    func_8002D7EC(&this->actor);
-    this->actor.shape.rot.x += sRockRotSpeedX;
-    this->actor.shape.rot.y += sRockRotSpeedY;
+    Actor_UpdatePos(&this->actor);
+    this->actor.shape.rot.x += sRotSpeedX;
+    this->actor.shape.rot.y += sRotSpeedY;
     Actor_UpdateBgCheckInfo(play, &this->actor, 7.5f, 35.0f, 0.0f, 0xC5);
     Collider_UpdateCylinder(&this->actor, &this->collider);
     CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);
@@ -492,8 +501,7 @@ void EnIshi_DrawLarge(EnIshi* this, PlayState* play) {
     OPEN_DISPS(play->state.gfxCtx);
 
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, 255);
     gSPDisplayList(POLY_OPA_DISP++, gSilverRockDL);
 
@@ -509,6 +517,6 @@ void EnIshi_Draw(Actor* thisx, PlayState* play) {
 }
 
 void EnIshi_Reset(void) {
-    sRockRotSpeedX = 0;
-    sRockRotSpeedY = 0;
+    sRotSpeedX = 0;
+    sRotSpeedY = 0;
 }

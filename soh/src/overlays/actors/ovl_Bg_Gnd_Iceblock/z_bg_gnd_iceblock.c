@@ -8,7 +8,7 @@
 #include "objects/object_demo_kekkai/object_demo_kekkai.h"
 #include <assert.h>
 
-#define FLAGS (ACTOR_FLAG_UPDATE_WHILE_CULLED | ACTOR_FLAG_DRAW_WHILE_CULLED)
+#define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
 typedef enum {
     /* 0 */ GNDICE_IDLE,
@@ -241,7 +241,7 @@ void BgGndIceblock_Idle(BgGndIceblock* this, PlayState* play) {
         if (this->dyna.unk_150 > 0.0f) {
             BgGndIceblock_SetNextPosition(this);
             if (Actor_WorldDistXZToPoint(&this->dyna.actor, &this->targetPos) > 1.0f) {
-                func_8002DF54(play, &this->dyna.actor, 8);
+                Player_SetCsActionWithHaltedActors(play, &this->dyna.actor, 8);
                 this->actionFunc = BgGndIceblock_Slide;
             }
         }
@@ -282,7 +282,7 @@ void BgGndIceblock_Fall(BgGndIceblock* this, PlayState* play) {
         thisx->world.pos.y = thisx->home.pos.y - 100.0f;
         thisx->world.pos.z = thisx->home.pos.z;
         if (Player_InCsMode(play)) {
-            func_8002DF54(play, thisx, 7);
+            Player_SetCsActionWithHaltedActors(play, thisx, 7);
         }
         this->actionFunc = BgGndIceblock_Reset;
     }
@@ -295,7 +295,7 @@ void BgGndIceblock_Hole(BgGndIceblock* this, PlayState* play) {
     if (Math_StepToF(&thisx->world.pos.y, thisx->home.pos.y - 100.0f, thisx->velocity.y)) {
         thisx->velocity.y = 0.0f;
         if (Player_InCsMode(play)) {
-            func_8002DF54(play, thisx, 7);
+            Player_SetCsActionWithHaltedActors(play, thisx, 7);
         }
         this->actionFunc = BgGndIceblock_Idle;
     }
@@ -319,7 +319,7 @@ void BgGndIceblock_Slide(BgGndIceblock* this, PlayState* play) {
         switch (BgGndIceblock_NextAction(this)) {
             case GNDICE_IDLE:
                 this->actionFunc = BgGndIceblock_Idle;
-                func_8002DF54(play, thisx, 7);
+                Player_SetCsActionWithHaltedActors(play, thisx, 7);
                 break;
             case GNDICE_FALL:
                 this->actionFunc = BgGndIceblock_Fall;
@@ -341,7 +341,7 @@ void BgGndIceblock_Slide(BgGndIceblock* this, PlayState* play) {
         pos.x = thisx->world.pos.x - (60.0f * Math_SinS(this->dyna.unk_158)) + (Math_CosS(this->dyna.unk_158) * spread);
         pos.z = thisx->world.pos.z - (60.0f * Math_CosS(this->dyna.unk_158)) - (Math_SinS(this->dyna.unk_158) * spread);
         func_8002829C(play, &pos, &velocity, &sZeroVec, &sWhite, &sGray, 250, Rand_S16Offset(40, 15));
-        func_8002F974(thisx, NA_SE_PL_SLIP_ICE_LEVEL - SFX_FLAG);
+        Actor_PlaySfx_Flagged(thisx, NA_SE_PL_SLIP_ICE_LEVEL - SFX_FLAG);
     }
 }
 

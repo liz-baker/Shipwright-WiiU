@@ -4,12 +4,15 @@
 
 #include "global.h"
 #include "vt.h"
-#include "soh/Enhancements/randomizer/randomizer_entrance.h"
-#include "soh/Enhancements/game-interactor/GameInteractor.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include <string.h>
 #include <assert.h>
 
-#include "public/bridge/gfxbridge.h"
+#include <libultraship/bridge/gfxbridge.h>
+#include <libultraship/bridge/resourcebridge.h>
+#include "soh/OTRGlobals.h"
+#include "soh/ResourceManagerHelpers.h"
+#include <libultraship/bridge/consolevariablebridge.h>
 
 void func_80095AB4(PlayState* play, Room* room, u32 flags);
 void func_80095D04(PlayState* play, Room* room, u32 flags);
@@ -32,7 +35,7 @@ Gfx D_801270B0[] = {
     gsSPEndDisplayList(),
 };
 
-s32 OTRfunc_8009728C(PlayState* play, RoomContext* roomCtx, s32 roomNum);
+s32 OTRRoom_RequestNewRoom(PlayState* play, RoomContext* roomCtx, s32 roomNum);
 s32 OTRfunc_800973FC(PlayState* play, RoomContext* roomCtx);
 
 void (*sRoomDrawHandlers[])(PlayState* play, Room* room, u32 flags) = {
@@ -115,13 +118,13 @@ void func_80095D04(PlayState* play, Room* room, u32 flags) {
     OPEN_DISPS(play->state.gfxCtx);
     if (flags & 1) {
         func_800342EC(&D_801270A0, play);
-        //gSPSegment(POLY_OPA_DISP++, 0x03, room->segment);
+        // gSPSegment(POLY_OPA_DISP++, 0x03, room->segment);
         func_80093C80(play);
         gSPMatrix(POLY_OPA_DISP++, &gMtxClear, G_MTX_MODELVIEW | G_MTX_LOAD);
     }
     if (flags & 2) {
         func_8003435C(&D_801270A0, play);
-        //gSPSegment(POLY_XLU_DISP++, 0x03, room->segment);
+        // gSPSegment(POLY_XLU_DISP++, 0x03, room->segment);
         Gfx_SetupDL_25Xlu(play->state.gfxCtx);
         gSPMatrix(POLY_XLU_DISP++, &gMtxClear, G_MTX_MODELVIEW | G_MTX_LOAD);
     }
@@ -138,8 +141,7 @@ void func_80095D04(PlayState* play, Room* room, u32 flags) {
         sp90.y = polygonDlist->pos.y;
         sp90.z = polygonDlist->pos.z;
         SkinMatrix_Vec3fMtxFMultXYZW(&play->viewProjectionMtxF, &sp90, &sp84, &sp80);
-        if (-(f32)polygonDlist->unk_06 < sp84.z)
-        {
+        if (-(f32)polygonDlist->unk_06 < sp84.z) {
             temp_f2 = sp84.z - polygonDlist->unk_06;
             if (temp_f2 < play->lightCtx.fogFar) {
                 phi_v0 = spB4;
@@ -183,8 +185,7 @@ void func_80095D04(PlayState* play, Room* room, u32 flags) {
         Gfx* temp2;
 
         polygonDlist = spB4->unk_00;
-        if (iREG(86) != 0)
-        {
+        if (iREG(86) != 0) {
             temp = sp78;
             for (phi_v1 = 0; phi_v1 < polygon2->num; phi_v1++, temp++) {
                 if (polygonDlist == temp) {
@@ -192,8 +193,7 @@ void func_80095D04(PlayState* play, Room* room, u32 flags) {
                 }
             }
 
-            if (((iREG(86) == 1) && (iREG(89) >= sp9C)) || ((iREG(86) == 2) && (iREG(89) == sp9C)))
-            {
+            if (((iREG(86) == 1) && (iREG(89) >= sp9C)) || ((iREG(86) == 2) && (iREG(89) == sp9C))) {
                 if (flags & 1) {
                     temp2 = polygonDlist->opa;
                     if (temp2 != NULL) {
@@ -237,7 +237,7 @@ s32 swapAndConvertJPEG(void* data) {
     if (BE32SWAP(*(u32*)data) == JPEG_MARKER) {
         size_t size = 320 * 240 * 2;
 
-        char *decodedJpeg = ResourceMgr_LoadJPEG(data, size);
+        char* decodedJpeg = ResourceMgr_LoadJPEG(data, size);
 
         osSyncPrintf("Expanding jpeg data\n");
         osSyncPrintf("Work buffer address (Z buffer) %08x\n", gZBuffer);
@@ -256,9 +256,11 @@ s32 swapAndConvertJPEG(void* data) {
     return 0;
 }
 
-
 void Room_DrawBackground2D(Gfx** gfxP, void* tex, void* tlut, u16 width, u16 height, u8 fmt, u8 siz, u16 tlutMode,
                            u16 tlutCount, f32 offsetX, f32 offsetY) {
+    if (!GameInteractor_Should(VB_DRAW_2D_BACKGROUND, true)) {
+        return;
+    }
     Gfx* gfx = *gfxP;
     uObjBg* bg;
 
@@ -284,7 +286,7 @@ void Room_DrawBackground2D(Gfx** gfxP, void* tex, void* tlut, u16 width, u16 hei
     ResourceMgr_UnloadOriginalWhenAltExists((char*)tex);
 
     if (ResourceMgr_ResourceIsBackground((char*)tex)) {
-        char* blob = (char*)ResourceGetDataByName((char *)tex);
+        char* blob = (char*)ResourceGetDataByName((char*)tex);
         swapAndConvertJPEG(blob);
         bg->b.imagePtr = (uintptr_t)blob;
     }
@@ -317,10 +319,9 @@ void Room_DrawBackground2D(Gfx** gfxP, void* tex, void* tlut, u16 width, u16 hei
         gDPSetOtherMode(gfx++, tlutMode | G_TL_TILE | G_TD_CLAMP | G_TP_NONE | G_CYC_COPY | G_PM_NPRIMITIVE,
                         G_AC_THRESHOLD | G_ZS_PIXEL | G_RM_NOOP | G_RM_NOOP2);
 
-        gDPLoadMultiTile(gfx++, bg->b.imagePtr, 0,
-            G_TX_RENDERTILE, G_IM_FMT_RGBA, G_IM_SIZ_16b, 320, 0, 0, 0, 0 + 31,
-            0 + 31, 0, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOLOD,
-            G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOLOD);
+        gDPLoadMultiTile(gfx++, bg->b.imagePtr, 0, G_TX_RENDERTILE, G_IM_FMT_RGBA, G_IM_SIZ_16b, 320, 0, 0, 0, 0 + 31,
+                         0 + 31, 0, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOMIRROR | G_TX_WRAP,
+                         G_TX_NOMASK, G_TX_NOLOD);
 
         gSPBgRectCopy(gfx++, bg);
     } else {
@@ -383,9 +384,10 @@ void func_80096680(PlayState* play, Room* room, u32 flags) {
                 spA8 = POLY_OPA_DISP;
                 Camera_GetSkyboxOffset(&sp60, camera);
                 Room_DrawBackground2D(&spA8, polygon1->single.source, polygon1->single.tlut, polygon1->single.width,
-                              polygon1->single.height, polygon1->single.fmt, polygon1->single.siz,
-                              polygon1->single.mode0, polygon1->single.tlutCount,
-                              (sp60.x + sp60.z) * 1.2f + sp60.y * 0.6f, sp60.y * 2.4f + (sp60.x + sp60.z) * 0.3f);
+                                      polygon1->single.height, polygon1->single.fmt, polygon1->single.siz,
+                                      polygon1->single.mode0, polygon1->single.tlutCount,
+                                      (sp60.x + sp60.z) * 1.2f + sp60.y * 0.6f,
+                                      sp60.y * 2.4f + (sp60.x + sp60.z) * 0.3f);
                 POLY_OPA_DISP = spA8;
             }
 
@@ -413,33 +415,28 @@ BgImage* func_80096A74(PolygonType1* polygon1, PlayState* play) {
 
     camera = GET_ACTIVE_CAM(play);
     camId = camera->camDataIdx;
-    if (camId == -1 && (CVarGetInteger(CVAR_CHEAT("NoRestrictItems"), 0) || (CVarGetInteger(CVAR_REMOTE("Scheme"), GI_SCHEME_SAIL) == GI_SCHEME_CROWD_CONTROL && CVarGetInteger(CVAR_REMOTE("Enabled"), 0)))) {
-        // This prevents a crash when using items that change the
-        // camera (such as din's fire), voiding out or dying on 
-        // scenes with prerendered backgrounds.
-        return NULL;
-    }
-
-    // jfifid
-    camId2 = func_80041C10(&play->colCtx, camId, BGCHECK_SCENE)[2].y;
-    if (camId2 >= 0) {
-        camId = camId2;
-    }
-
-    player = GET_PLAYER(play);
-    player->actor.params = (player->actor.params & 0xFF00) | camId;
-
-    bgImage = SEGMENTED_TO_VIRTUAL(polygon1->multi.list);
-    for (i = 0; i < polygon1->multi.count; i++) {
-        if (bgImage->id == camId) {
-            return bgImage;
+    if (GameInteractor_Should(VB_SHOULD_LOAD_BG_IMAGE, true, &camId)) {
+        // jfifid
+        camId2 = BgCheck_GetBgCamFuncDataImpl(&play->colCtx, camId, BGCHECK_SCENE)[2].y;
+        if (camId2 >= 0) {
+            camId = camId2;
         }
-        bgImage++;
-    }
 
-    // "z_room.c: Data consistent with camera id does not exist camid=%d"
-    osSyncPrintf(VT_COL(RED, WHITE) "z_room.c:カメラＩＤに一致するデータが存在しません camid=%d\n" VT_RST, camId);
-    LOG_HUNGUP_THREAD();
+        player = GET_PLAYER(play);
+        player->actor.params = (player->actor.params & 0xFF00) | camId;
+
+        bgImage = SEGMENTED_TO_VIRTUAL(polygon1->multi.list);
+        for (i = 0; i < polygon1->multi.count; i++) {
+            if (bgImage->id == camId) {
+                return bgImage;
+            }
+            bgImage++;
+        }
+
+        // "z_room.c: Data consistent with camera id does not exist camid=%d"
+        osSyncPrintf(VT_COL(RED, WHITE) "z_room.c:カメラＩＤに一致するデータが存在しません camid=%d\n" VT_RST, camId);
+        LOG_HUNGUP_THREAD();
+    }
 
     return NULL;
 }
@@ -483,9 +480,10 @@ void func_80096B6C(PlayState* play, Room* room, u32 flags) {
                 Vec3f sp5C;
                 spA8 = POLY_OPA_DISP;
                 Camera_GetSkyboxOffset(&sp5C, camera);
-                Room_DrawBackground2D(&spA8, bgImage->source, bgImage->tlut, bgImage->width, bgImage->height, bgImage->fmt,
-                              bgImage->siz, bgImage->mode0, bgImage->tlutCount,
-                              (sp5C.x + sp5C.z) * 1.2f + sp5C.y * 0.6f, sp5C.y * 2.4f + (sp5C.x + sp5C.z) * 0.3f);
+                Room_DrawBackground2D(&spA8, bgImage->source, bgImage->tlut, bgImage->width, bgImage->height,
+                                      bgImage->fmt, bgImage->siz, bgImage->mode0, bgImage->tlutCount,
+                                      (sp5C.x + sp5C.z) * 1.2f + sp5C.y * 0.6f,
+                                      sp5C.y * 2.4f + (sp5C.x + sp5C.z) * 0.3f);
                 POLY_OPA_DISP = spA8;
             }
 
@@ -573,27 +571,20 @@ u32 func_80096FE8(PlayState* play, RoomContext* roomCtx) {
     // "Room buffer end pointer=%08x"
     osSyncPrintf("部屋バッファ終了ポインタ=%08x\n", roomCtx->bufPtrs[1]);
     osSyncPrintf(VT_RST);
-    roomCtx->unk_30 = 0;
+    roomCtx->activeBufPage = 0;
     roomCtx->status = 0;
 
     frontRoom = gSaveContext.respawnFlag > 0 ? ((void)0, gSaveContext.respawn[gSaveContext.respawnFlag - 1].roomIndex)
                                              : play->setupEntranceList[play->curSpawn].room;
-
-    // In ER, override roomNum to load based on scene and spawn during scene init
-    if (IS_RANDO && gSaveContext.respawnFlag <= 0 &&
-        Randomizer_GetSettingValue(RSK_SHUFFLE_ENTRANCES)) {
-        frontRoom = Entrance_OverrideSpawnSceneRoom(play->sceneNum, play->curSpawn, frontRoom);
-    }
-
-    func_8009728C(play, roomCtx, frontRoom);
+    Room_RequestNewRoom(play, roomCtx, frontRoom);
 
     return maxRoomSize;
 }
 
-s32 func_8009728C(PlayState* play, RoomContext* roomCtx, s32 roomNum) {
+s32 Room_RequestNewRoom(PlayState* play, RoomContext* roomCtx, s32 roomNum) {
     size_t size;
 
-    return OTRfunc_8009728C(play, roomCtx, roomNum);
+    return OTRRoom_RequestNewRoom(play, roomCtx, roomNum);
 
     if (roomCtx->status == 0) {
         roomCtx->prevRoom = roomCtx->curRoom;
@@ -604,12 +595,13 @@ s32 func_8009728C(PlayState* play, RoomContext* roomCtx, s32 roomNum) {
         assert(roomNum < play->numRooms);
 
         size = play->roomList[roomNum].vromEnd - play->roomList[roomNum].vromStart;
-        roomCtx->unk_34 = (void*)ALIGN16((intptr_t)roomCtx->bufPtrs[roomCtx->unk_30] - ((size + 8) * roomCtx->unk_30 + 7));
+        roomCtx->unk_34 = (void*)ALIGN16((intptr_t)roomCtx->bufPtrs[roomCtx->activeBufPage] -
+                                         ((size + 8) * roomCtx->activeBufPage + 7));
 
         osCreateMesgQueue(&roomCtx->loadQueue, &roomCtx->loadMsg, 1);
         DmaMgr_SendRequest2(&roomCtx->dmaRequest, roomCtx->unk_34, play->roomList[roomNum].vromStart, size, 0,
                             &roomCtx->loadQueue, OS_MESG_PTR(NULL), __FILE__, __LINE__);
-        roomCtx->unk_30 ^= 1;
+        roomCtx->activeBufPage ^= 1;
 
         return 1;
     }
@@ -619,7 +611,6 @@ s32 func_8009728C(PlayState* play, RoomContext* roomCtx, s32 roomNum) {
 
 s32 func_800973FC(PlayState* play, RoomContext* roomCtx) {
     return OTRfunc_800973FC(play, roomCtx);
-
 
     if (roomCtx->status == 1) {
         if (!osRecvMesg(&roomCtx->loadQueue, NULL, OS_MESG_NOBLOCK)) {
@@ -641,32 +632,31 @@ s32 func_800973FC(PlayState* play, RoomContext* roomCtx) {
 }
 
 void Room_Draw(PlayState* play, Room* room, u32 flags) {
-    if (room->segment != NULL)
-    {
+    if (room->segment != NULL) {
         gSegments[3] = VIRTUAL_TO_PHYSICAL(room->segment);
         assert(room->meshHeader->base.type < ARRAY_COUNTU(sRoomDrawHandlers));
         sRoomDrawHandlers[room->meshHeader->base.type](play, room, flags);
     }
 }
 
-void func_80097534(PlayState* play, RoomContext* roomCtx) {
+void Room_FinishRoomChange(PlayState* play, RoomContext* roomCtx) {
     roomCtx->prevRoom.num = -1;
     roomCtx->prevRoom.segment = NULL;
-    func_80031B14(play, &play->actorCtx); //kills all actors without room num set to -1
+    func_80031B14(play, &play->actorCtx); // kills all actors without room num set to -1
     Actor_SpawnTransitionActors(play, &play->actorCtx);
     Map_InitRoomData(play, roomCtx->curRoom.num);
     if (!((play->sceneNum >= SCENE_HYRULE_FIELD) && (play->sceneNum <= SCENE_LON_LON_RANCH))) {
         Map_SavePlayerInitialInfo(play);
     }
     Audio_SetEnvReverb(play->roomCtx.curRoom.echo);
-    u8 idx = gSaveContext.sohStats.tsIdx;
-    gSaveContext.sohStats.sceneTimestamps[idx].scene = gSaveContext.sohStats.sceneNum;
-    gSaveContext.sohStats.sceneTimestamps[idx].room = gSaveContext.sohStats.roomNum;
-    gSaveContext.sohStats.sceneTimestamps[idx].roomTime = gSaveContext.sohStats.roomTimer / 2;
-    gSaveContext.sohStats.sceneTimestamps[idx].isRoom = 
-        gPlayState->sceneNum == gSaveContext.sohStats.sceneTimestamps[idx].scene &&
-        gPlayState->roomCtx.curRoom.num != gSaveContext.sohStats.sceneTimestamps[idx].room;
-    gSaveContext.sohStats.tsIdx++;
-    gSaveContext.sohStats.roomNum = roomCtx->curRoom.num;
-    gSaveContext.sohStats.roomTimer = 0;
+    u8 idx = gSaveContext.ship.stats.tsIdx;
+    gSaveContext.ship.stats.sceneTimestamps[idx].scene = gSaveContext.ship.stats.sceneNum;
+    gSaveContext.ship.stats.sceneTimestamps[idx].room = gSaveContext.ship.stats.roomNum;
+    gSaveContext.ship.stats.sceneTimestamps[idx].roomTime = gSaveContext.ship.stats.roomTimer / 2;
+    gSaveContext.ship.stats.sceneTimestamps[idx].isRoom =
+        gPlayState->sceneNum == gSaveContext.ship.stats.sceneTimestamps[idx].scene &&
+        gPlayState->roomCtx.curRoom.num != gSaveContext.ship.stats.sceneTimestamps[idx].room;
+    gSaveContext.ship.stats.tsIdx++;
+    gSaveContext.ship.stats.roomNum = roomCtx->curRoom.num;
+    gSaveContext.ship.stats.roomTimer = 0;
 }

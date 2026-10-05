@@ -126,7 +126,7 @@ void BgIceObjects_CheckPits(BgIceObjects* this, PlayState* play) {
             thisx->world.pos.y = thisx->home.pos.y - 60.0f;
             thisx->world.pos.z = thisx->home.pos.z;
             if (thisx->params != 0) {
-                func_8002DF54(play, thisx, 7);
+                Player_SetCsActionWithHaltedActors(play, thisx, 7);
             }
             this->actionFunc = BgIceObjects_Reset;
         }
@@ -142,8 +142,8 @@ void BgIceObjects_Idle(BgIceObjects* this, PlayState* play) {
         if ((this->dyna.unk_150 > 0.0f) && !Player_InCsMode(play)) {
             BgIceObjects_SetNextTarget(this, play);
             if (Actor_WorldDistXZToPoint(thisx, &this->targetPos) > 1.0f) {
-                thisx->flags |= ACTOR_FLAG_UPDATE_WHILE_CULLED;
-                func_8002DF54(play, thisx, 8);
+                thisx->flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
+                Player_SetCsActionWithHaltedActors(play, thisx, 8);
                 thisx->params = 1;
                 this->actionFunc = BgIceObjects_Slide;
             }
@@ -170,10 +170,10 @@ void BgIceObjects_Slide(BgIceObjects* this, PlayState* play) {
         this->targetPos.x = thisx->world.pos.x;
         this->targetPos.z = thisx->world.pos.z;
         if (thisx->velocity.y <= 0.0f) {
-            thisx->flags &= ~ACTOR_FLAG_UPDATE_WHILE_CULLED;
+            thisx->flags &= ~ACTOR_FLAG_UPDATE_CULLING_DISABLED;
         }
         thisx->params = 0;
-        func_8002DF54(play, thisx, 7);
+        Player_SetCsActionWithHaltedActors(play, thisx, 7);
         Audio_PlayActorSound2(thisx, NA_SE_EV_BLOCK_BOUND);
         if ((fabsf(thisx->world.pos.x + 1387.0f) < 1.0f) && (fabsf(thisx->world.pos.z + 260.0f) < 1.0f)) {
             this->actionFunc = BgIceObjects_Stuck;
@@ -193,7 +193,7 @@ void BgIceObjects_Slide(BgIceObjects* this, PlayState* play) {
         pos.x = thisx->world.pos.x - (60.0f * Math_SinS(this->dyna.unk_158)) + (Math_CosS(this->dyna.unk_158) * spread);
         pos.z = thisx->world.pos.z - (60.0f * Math_CosS(this->dyna.unk_158)) - (Math_SinS(this->dyna.unk_158) * spread);
         func_8002829C(play, &pos, &velocity, &sZeroVec, &sWhite, &sGray, 250, Rand_S16Offset(40, 15));
-        func_8002F974(thisx, NA_SE_PL_SLIP_ICE_LEVEL - SFX_FLAG);
+        Actor_PlaySfx_Flagged(thisx, NA_SE_PL_SLIP_ICE_LEVEL - SFX_FLAG);
     }
     BgIceObjects_CheckPits(this, play);
 }
@@ -207,7 +207,7 @@ void BgIceObjects_Reset(BgIceObjects* this, PlayState* play) {
         this->dyna.unk_150 = 0.0f;
     }
     if (Math_StepToF(&thisx->world.pos.y, thisx->home.pos.y, 1.0f)) {
-        thisx->flags &= ~ACTOR_FLAG_UPDATE_WHILE_CULLED;
+        thisx->flags &= ~ACTOR_FLAG_UPDATE_CULLING_DISABLED;
         Math_Vec3f_Copy(&this->targetPos, &thisx->home.pos);
         this->actionFunc = BgIceObjects_Idle;
         thisx->speedXZ = 0.0f;

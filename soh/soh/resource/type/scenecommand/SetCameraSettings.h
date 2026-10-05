@@ -1,16 +1,12 @@
 #pragma once
 
-#include <cstdint>
-#include <vector>
-#include <memory>
-#include "Resource.h"
+#include <ship/resource/Resource.h>
 #include "SceneCommand.h"
-#include <libultraship/libultra/types.h>
 
 namespace SOH {
 typedef struct {
-  int8_t cameraMovement;
-  int32_t worldMapArea;
+    int8_t cameraMovement;
+    int32_t worldMapArea;
 } CameraSettings;
 
 class SetCameraSettings : public SceneCommand<CameraSettings> {
@@ -22,4 +18,4 @@ class SetCameraSettings : public SceneCommand<CameraSettings> {
 
     CameraSettings settings;
 };
-}; // namespace LUS
+}; // namespace SOH

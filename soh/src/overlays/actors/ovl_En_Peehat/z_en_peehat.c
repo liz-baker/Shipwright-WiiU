@@ -3,8 +3,11 @@
 #include "overlays/actors/ovl_En_Bom/z_en_bom.h"
 #include "overlays/effects/ovl_Effect_Ss_Hahen/z_eff_ss_hahen.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include <libultraship/bridge/consolevariablebridge.h>
 
-#define FLAGS (ACTOR_FLAG_TARGETABLE | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_WHILE_CULLED | ACTOR_FLAG_PLAY_HIT_SFX)
+#define FLAGS                                                                                 \
+    (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
+     ACTOR_FLAG_SFX_FOR_PLAYER_BODY_HIT)
 
 #define GROUND_HOVER_HEIGHT 75.0f
 #define MAX_LARVA 3
@@ -194,8 +197,7 @@ void EnPeehat_Init(Actor* thisx, PlayState* play) {
 
     Actor_ProcessInitChain(&this->actor, sInitChain);
     Actor_SetScale(&this->actor, 36.0f * 0.001f);
-    SkelAnime_Init(play, &this->skelAnime, &gPeehatSkel, &gPeehatRisingAnim, this->jointTable, this->morphTable,
-                   24);
+    SkelAnime_Init(play, &this->skelAnime, &gPeehatSkel, &gPeehatRisingAnim, this->jointTable, this->morphTable, 24);
     ActorShape_Init(&this->actor.shape, 100.0f, ActorShadow_DrawCircle, 27.0f);
     this->actor.focus.pos = this->actor.world.pos;
     this->unk_2D4 = 0;
@@ -206,8 +208,8 @@ void EnPeehat_Init(Actor* thisx, PlayState* play) {
     this->actor.floorHeight = this->actor.world.pos.y;
     Collider_InitCylinder(play, &this->colCylinder);
     Collider_SetCylinder(play, &this->colCylinder, &this->actor, &sCylinderInit);
-    Collider_InitQuad(play, &this->colQuad);
-    Collider_SetQuad(play, &this->colQuad, &this->actor, &sQuadInit);
+    Collider_InitQuad(play, &this->colliderQuad);
+    Collider_SetQuad(play, &this->colliderQuad, &this->actor, &sQuadInit);
     Collider_InitJntSph(play, &this->colJntSph);
     Collider_SetJntSph(play, &this->colJntSph, &this->actor, &sJntSphInit, this->colJntSphItemList);
 
@@ -226,7 +228,7 @@ void EnPeehat_Init(Actor* thisx, PlayState* play) {
             this->xzDistToRise = 2800.0f;
             this->xzDistMax = 1400.0f;
             EnPeehat_Flying_SetStateGround(this);
-            this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+            this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
             break;
         case PEAHAT_TYPE_LARVA:
             this->actor.scale.x = this->actor.scale.z = 0.006f;
@@ -235,8 +237,8 @@ void EnPeehat_Init(Actor* thisx, PlayState* play) {
             this->colCylinder.dim.height = 15;
             this->colCylinder.dim.yShift = -5;
             this->colCylinder.info.bumper.dmgFlags = 0x1F824;
-            this->colQuad.base.atFlags = AT_ON | AT_TYPE_ENEMY;
-            this->colQuad.base.acFlags = AC_ON | AC_TYPE_PLAYER;
+            this->colliderQuad.base.atFlags = AT_ON | AT_TYPE_ENEMY;
+            this->colliderQuad.base.acFlags = AC_ON | AC_TYPE_PLAYER;
             this->actor.naviEnemyId = 0x49; // Larva
             EnPeehat_Larva_SetStateSeekPlayer(this);
             break;
@@ -257,8 +259,6 @@ void EnPeehat_Destroy(Actor* thisx, PlayState* play) {
             parent->unk_2FA--;
         }
     }
-
-    ResourceMgr_UnregisterSkeleton(&this->skelAnime);
 }
 
 void EnPeehat_SpawnDust(PlayState* play, EnPeehat* this, Vec3f* pos, f32 arg3, s32 arg4, f32 arg5, f32 arg6) {
@@ -296,17 +296,19 @@ void EnPeehat_HitWhenGrounded(EnPeehat* this, PlayState* play) {
         s32 i;
 
         this->colCylinder.base.acFlags &= ~AC_HIT;
-        for (i = MAX_LARVA - this->unk_2FA; i > 0; i--) {
-            Actor* larva =
-                Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_PEEHAT,
-                                   Rand_CenteredFloat(25.0f) + this->actor.world.pos.x,
-                                   Rand_CenteredFloat(25.0f) + (this->actor.world.pos.y + 50.0f),
-                                   Rand_CenteredFloat(25.0f) + this->actor.world.pos.z, 0, 0, 0, PEAHAT_TYPE_LARVA);
+        if (GameInteractor_Should(VB_PEEHAT_SPAWN_LARVAS, true, this, play)) {
+            for (i = MAX_LARVA - this->unk_2FA; i > 0; i--) {
+                Actor* larva =
+                    Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_PEEHAT,
+                                       Rand_CenteredFloat(25.0f) + this->actor.world.pos.x,
+                                       Rand_CenteredFloat(25.0f) + (this->actor.world.pos.y + 50.0f),
+                                       Rand_CenteredFloat(25.0f) + this->actor.world.pos.z, 0, 0, 0, PEAHAT_TYPE_LARVA);
 
-            if (larva != NULL) {
-                larva->velocity.y = 6.0f;
-                larva->shape.rot.y = larva->world.rot.y = Rand_CenteredFloat(0xFFFF);
-                this->unk_2FA++;
+                if (larva != NULL) {
+                    larva->velocity.y = 6.0f;
+                    larva->shape.rot.y = larva->world.rot.y = Rand_CenteredFloat(0xFFFF);
+                    this->unk_2FA++;
+                }
             }
         }
         this->unk_2D4 = 8;
@@ -329,7 +331,7 @@ void EnPeehat_Ground_StateGround(EnPeehat* this, PlayState* play) {
     // Keep the peahat as the version that doesn't spawn extra enemies and can actually be killed
     // when Enemy Randomizer is on.
     if (IS_DAY || CVarGetInteger(CVAR_ENHANCEMENT("RandomizedEnemies"), 0)) {
-        this->actor.flags |= ACTOR_FLAG_TARGETABLE;
+        this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
         if (this->riseDelayTimer == 0) {
             if (this->actor.xzDistToPlayer < this->xzDistToRise) {
                 EnPeehat_Ground_SetStateRise(this);
@@ -339,7 +341,7 @@ void EnPeehat_Ground_StateGround(EnPeehat* this, PlayState* play) {
             this->riseDelayTimer--;
         }
     } else {
-        this->actor.flags &= ~ACTOR_FLAG_TARGETABLE;
+        this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
         Math_SmoothStepToF(&this->actor.shape.yOffset, -1000.0f, 1.0f, 50.0f, 0.0f);
         if (this->unk_2D4 != 0) {
             this->unk_2D4--;
@@ -561,22 +563,22 @@ void EnPeehat_Larva_StateSeekPlayer(EnPeehat* this, PlayState* play) {
     this->bladeRot += this->bladeRotVel;
     Math_SmoothStepToF(&this->scaleShift, 0.075f, 1.0f, 0.005f, 0.0f);
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_PIHAT_SM_FLY - SFX_FLAG);
-    if (this->colQuad.base.atFlags & AT_BOUNCED) {
+    if (this->colliderQuad.base.atFlags & AT_BOUNCED) {
         this->actor.colChkInfo.health = 0;
-        this->colQuad.base.acFlags = this->colQuad.base.acFlags & ~AC_BOUNCED;
+        this->colliderQuad.base.acFlags = this->colliderQuad.base.acFlags & ~AC_BOUNCED;
         EnPeehat_SetStateAttackRecoil(this);
-    } else if ((this->colQuad.base.atFlags & AT_HIT) || (this->colCylinder.base.acFlags & AC_HIT) ||
-               (this->actor.bgCheckFlags & 1)) {
+    } else if ((this->colliderQuad.base.atFlags & AT_HIT) || (this->colCylinder.base.acFlags & AC_HIT) ||
+               (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
         Player* player = GET_PLAYER(play);
-        this->colQuad.base.atFlags &= ~AT_HIT;
-        if (!(this->colCylinder.base.acFlags & AC_HIT) && &player->actor == this->colQuad.base.at) {
+        this->colliderQuad.base.atFlags &= ~AT_HIT;
+        if (!(this->colCylinder.base.acFlags & AC_HIT) && &player->actor == this->colliderQuad.base.at) {
             if (Rand_ZeroOne() > 0.5f) {
                 this->actor.world.rot.y += 0x2000;
             } else {
                 this->actor.world.rot.y -= 0x2000;
             }
             this->unk_2D4 = 40;
-        } else if (this->colCylinder.base.acFlags & AC_HIT || this->actor.bgCheckFlags & 1) {
+        } else if (this->colCylinder.base.acFlags & AC_HIT || this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) {
             Vec3f zeroVec = { 0, 0, 0 };
             s32 i;
             for (i = 4; i >= 0; i--) {
@@ -584,14 +586,12 @@ void EnPeehat_Larva_StateSeekPlayer(EnPeehat* this, PlayState* play) {
                 pos.x = Rand_CenteredFloat(20.0f) + this->actor.world.pos.x;
                 pos.y = Rand_CenteredFloat(10.0f) + this->actor.world.pos.y;
                 pos.z = Rand_CenteredFloat(20.0f) + this->actor.world.pos.z;
-                EffectSsDeadDb_Spawn(play, &pos, &zeroVec, &zeroVec, 40, 7, 255, 255, 255, 255, 255, 0, 0, 1, 9,
-                                     1);
+                EffectSsDeadDb_Spawn(play, &pos, &zeroVec, &zeroVec, 40, 7, 255, 255, 255, 255, 255, 0, 0, 1, 9, 1);
             }
         }
-        if (&player->actor != this->colQuad.base.at || this->colCylinder.base.acFlags & AC_HIT) {
-            if (!(this->actor.bgCheckFlags & 1)) {
-                EffectSsDeadSound_SpawnStationary(play, &this->actor.projectedPos, NA_SE_EN_PIHAT_SM_DEAD, 1, 1,
-                                                  40);
+        if (&player->actor != this->colliderQuad.base.at || this->colCylinder.base.acFlags & AC_HIT) {
+            if (!(this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
+                EffectSsDeadSound_SpawnStationary(play, &this->actor.projectedPos, NA_SE_EN_PIHAT_SM_DEAD, 1, 1, 40);
             }
             Item_DropCollectibleRandom(play, &this->actor, &this->actor.world.pos, 0x20);
             Actor_Kill(&this->actor);
@@ -761,8 +761,7 @@ void EnPeehat_StateAttackRecoil(EnPeehat* this, PlayState* play) {
                 pos.x = Rand_CenteredFloat(20.0f) + this->actor.world.pos.x;
                 pos.y = Rand_CenteredFloat(10.0f) + this->actor.world.pos.y;
                 pos.z = Rand_CenteredFloat(20.0f) + this->actor.world.pos.z;
-                EffectSsDeadDb_Spawn(play, &pos, &zeroVec, &zeroVec, 40, 7, 255, 255, 255, 255, 255, 0, 0, 1, 9,
-                                     1);
+                EffectSsDeadDb_Spawn(play, &pos, &zeroVec, &zeroVec, 40, 7, 255, 255, 255, 255, 255, 0, 0, 1, 9, 1);
             }
             Actor_Kill(&this->actor);
             GameInteractor_ExecuteOnEnemyDefeat(&this->actor);
@@ -871,7 +870,7 @@ void EnPeehat_StateExplode(EnPeehat* this, PlayState* play) {
 
     if (this->animTimer == 5) {
         bomb = (EnBom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, this->actor.world.pos.x,
-                                   this->actor.world.pos.y, this->actor.world.pos.z, 0, 0, 0x602, 0, true);
+                                   this->actor.world.pos.y, this->actor.world.pos.z, 0, 0, 0x602, 0);
         if (bomb != NULL) {
             bomb->timer = 0;
         }
@@ -887,8 +886,8 @@ void EnPeehat_StateExplode(EnPeehat* this, PlayState* play) {
 }
 
 void EnPeehat_Adult_CollisionCheck(EnPeehat* this, PlayState* play) {
-    if ((this->colCylinder.base.acFlags & AC_BOUNCED) || (this->colQuad.base.acFlags & AC_BOUNCED)) {
-        this->colQuad.base.acFlags &= ~AC_BOUNCED;
+    if ((this->colCylinder.base.acFlags & AC_BOUNCED) || (this->colliderQuad.base.acFlags & AC_BOUNCED)) {
+        this->colliderQuad.base.acFlags &= ~AC_BOUNCED;
         this->colCylinder.base.acFlags &= ~AC_BOUNCED;
         this->colJntSph.base.acFlags &= ~AC_HIT;
     } else if (this->colJntSph.base.acFlags & AC_HIT) {
@@ -939,7 +938,7 @@ void EnPeehat_Update(Actor* thisx, PlayState* play) {
     }
     if (thisx->colChkInfo.damageEffect != PEAHAT_DMG_EFF_LIGHT_ICE_ARROW) {
         if (thisx->speedXZ != 0.0f || thisx->velocity.y != 0.0f) {
-            Actor_MoveForward(thisx);
+            Actor_MoveXZGravity(thisx);
             Actor_UpdateBgCheckInfo(play, thisx, 25.0f, 30.0f, 30.0f, 5);
         }
 
@@ -975,9 +974,9 @@ void EnPeehat_Update(Actor* thisx, PlayState* play) {
                 }
             }
         }
-        if (thisx->params != PEAHAT_TYPE_FLYING && this->colQuad.base.atFlags & AT_HIT) {
-            this->colQuad.base.atFlags &= ~AT_HIT;
-            if (&player->actor == this->colQuad.base.at) {
+        if (thisx->params != PEAHAT_TYPE_FLYING && this->colliderQuad.base.atFlags & AT_HIT) {
+            this->colliderQuad.base.atFlags &= ~AT_HIT;
+            if (&player->actor == this->colliderQuad.base.at) {
                 EnPeehat_SetStateAttackRecoil(this);
             }
         }
@@ -985,11 +984,11 @@ void EnPeehat_Update(Actor* thisx, PlayState* play) {
     if (this->state == PEAHAT_STATE_15 || this->state == PEAHAT_STATE_SEEK_PLAYER || this->state == PEAHAT_STATE_FLY ||
         this->state == PEAHAT_STATE_RETURN_HOME || this->state == PEAHAT_STATE_EXPLODE) {
         if (thisx->params != PEAHAT_TYPE_FLYING) {
-            CollisionCheck_SetAT(play, &play->colChkCtx, &this->colQuad.base);
-            CollisionCheck_SetAC(play, &play->colChkCtx, &this->colQuad.base);
+            CollisionCheck_SetAT(play, &play->colChkCtx, &this->colliderQuad.base);
+            CollisionCheck_SetAC(play, &play->colChkCtx, &this->colliderQuad.base);
         }
         // if PEAHAT_TYPE_GROUNDED
-        if (thisx->params < 0 && (thisx->flags & ACTOR_FLAG_ACTIVE)) {
+        if (thisx->params < 0 && (thisx->flags & ACTOR_FLAG_INSIDE_CULLING_VOLUME)) {
             for (i = 1; i >= 0; i--) {
                 Vec3f posResult;
                 CollisionPoly* poly = NULL;
@@ -1011,8 +1010,7 @@ void EnPeehat_Update(Actor* thisx, PlayState* play) {
     Math_SmoothStepToF(&this->scaleShift, 0.0f, 1.0f, 0.001f, 0.0f);
 }
 
-s32 EnPeehat_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
-                              void* thisx) {
+s32 EnPeehat_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx) {
     EnPeehat* this = (EnPeehat*)thisx;
 
     if (limbIndex == 4) {
@@ -1030,8 +1028,7 @@ s32 EnPeehat_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f
         Matrix_RotateZ(-(this->jiggleRot * 0.1f), MTXMODE_APPLY);
         Matrix_RotateY(-(this->jiggleRot * 0.13f), MTXMODE_APPLY);
         Matrix_RotateX(-(this->jiggleRot * 0.115f), MTXMODE_APPLY);
-        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                  G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_OPA_DISP++, *dList);
         Matrix_Pop();
         CLOSE_DISPS(play->state.gfxCtx);
@@ -1064,8 +1061,7 @@ void EnPeehat_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* r
         }
         Matrix_RotateY(3.2f + damageYRot, MTXMODE_APPLY);
         Matrix_Scale(0.3f, 0.2f, 0.2f, MTXMODE_APPLY);
-        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                  G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_OPA_DISP++, *dList);
         Matrix_Pop();
         CLOSE_DISPS(play->state.gfxCtx);
@@ -1079,14 +1075,13 @@ void EnPeehat_Draw(Actor* thisx, PlayState* play) {
     EnPeehat* this = (EnPeehat*)thisx;
 
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, EnPeehat_OverrideLimbDraw,
-                      EnPeehat_PostLimbDraw, this);
+    SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, EnPeehat_OverrideLimbDraw, EnPeehat_PostLimbDraw, this);
     if (this->actor.speedXZ != 0.0f || this->actor.velocity.y != 0.0f) {
-        Matrix_MultVec3f(&D_80AD285C[0], &this->colQuad.dim.quad[1]);
-        Matrix_MultVec3f(&D_80AD285C[1], &this->colQuad.dim.quad[0]);
-        Matrix_MultVec3f(&D_80AD285C[2], &this->colQuad.dim.quad[3]);
-        Matrix_MultVec3f(&D_80AD285C[3], &this->colQuad.dim.quad[2]);
-        Collider_SetQuadVertices(&this->colQuad, &this->colQuad.dim.quad[0], &this->colQuad.dim.quad[1],
-                                 &this->colQuad.dim.quad[2], &this->colQuad.dim.quad[3]);
+        Matrix_MultVec3f(&D_80AD285C[0], &this->colliderQuad.dim.quad[1]);
+        Matrix_MultVec3f(&D_80AD285C[1], &this->colliderQuad.dim.quad[0]);
+        Matrix_MultVec3f(&D_80AD285C[2], &this->colliderQuad.dim.quad[3]);
+        Matrix_MultVec3f(&D_80AD285C[3], &this->colliderQuad.dim.quad[2]);
+        Collider_SetQuadVertices(&this->colliderQuad, &this->colliderQuad.dim.quad[0], &this->colliderQuad.dim.quad[1],
+                                 &this->colliderQuad.dim.quad[2], &this->colliderQuad.dim.quad[3]);
     }
 }
