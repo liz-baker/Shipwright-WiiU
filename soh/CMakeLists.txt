@@ -676,9 +676,16 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
     )
 elseif(CMAKE_SYSTEM_NAME STREQUAL "CafeOS")
     find_package(SDL2 REQUIRED)
+    find_package(SDL2_net REQUIRED)
+    find_package(Ogg REQUIRED)
+    find_package(Vorbis REQUIRED)
     set(ADDITIONAL_LIBRARY_DEPENDENCIES
         "libultraship;"
+        "SDL2_net::SDL2_net"
         SDL2::SDL2-static
+        "Vorbis::vorbisfile"
+        "Vorbis::vorbis"
+        "Ogg::ogg"
 
         "$<$<CONFIG:Debug>:-Wl,--wrap=abort>"
     )
