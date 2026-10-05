@@ -231,11 +231,27 @@ if(_use_system_spdlog)
     find_package(spdlog 1.10 QUIET)
 endif()
 if(NOT spdlog_FOUND)
+    set(_spdlog_platform_args "")
+    if(CMAKE_SYSTEM_NAME STREQUAL "CafeOS")
+        # libultraship's cmake/dependencies/wiiu.cmake would patch spdlog for the console, but this
+        # declaration wins (first one does), so apply the same patch and options here: devkitPPC has
+        # no <netinet/udp.h>, and spdlog must not use thread_local storage or thread ids.
+        set(_spdlog_platform_args
+            PATCH_COMMAND patch -p1 -i "${CMAKE_CURRENT_SOURCE_DIR}/libultraship/cmake/dependencies/patches/spdlog-wiiu.patch"
+            # don't try to apply the patch multiple times https://stackoverflow.com/a/73725257
+            UPDATE_DISCONNECTED 1)
+        option(SPDLOG_BUILD_EXAMPLE "" OFF)
+        option(SPDLOG_BUILD_TESTS "" OFF)
+        option(SPDLOG_INSTALL "" OFF)
+        option(SPDLOG_NO_TLS "" ON)
+        option(SPDLOG_NO_THREAD_ID "" ON)
+    endif()
     FetchContent_Declare(
         spdlog
         GIT_REPOSITORY https://github.com/gabime/spdlog.git
         GIT_TAG v1.16.0
         OVERRIDE_FIND_PACKAGE
+        ${_spdlog_platform_args}
     )
     FetchContent_MakeAvailable(spdlog)
 endif()
