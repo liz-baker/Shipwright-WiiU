@@ -139,6 +139,16 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG")
 set(CMAKE_OBJCXX_FLAGS_RELEASE "-O2 -DNDEBUG")
 endif()
 
+# CMake ships no WHOLE_ARCHIVE link-library feature for the CafeOS platform, but libultraship
+# links StormLib through $<LINK_LIBRARY:WHOLE_ARCHIVE,storm>. devkitPPC uses GNU ld, so define
+# it the same way CMake does for the other GNU platforms.
+if (CMAKE_SYSTEM_NAME STREQUAL "CafeOS")
+set(CMAKE_CXX_LINK_LIBRARY_USING_WHOLE_ARCHIVE "LINKER:--push-state,--whole-archive" "<LINK_ITEM>" "LINKER:--pop-state")
+set(CMAKE_CXX_LINK_LIBRARY_USING_WHOLE_ARCHIVE_SUPPORTED TRUE)
+set(CMAKE_C_LINK_LIBRARY_USING_WHOLE_ARCHIVE "LINKER:--push-state,--whole-archive" "<LINK_ITEM>" "LINKER:--pop-state")
+set(CMAKE_C_LINK_LIBRARY_USING_WHOLE_ARCHIVE_SUPPORTED TRUE)
+endif()
+
 # Enforce strict, deterministic IEEE-754 floating-point to match N64 (MIPS) semantics.
 # Never enable fast-math, and disable FMA contraction: the R4300 CPU and RSP have no
 # fused multiply-add, so contracting mul+add into an FMA produces extra precision.
