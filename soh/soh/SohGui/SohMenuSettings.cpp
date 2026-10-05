@@ -196,8 +196,11 @@ void SohMenu::AddMenuSettings() {
     AddWidget(path, "Open App Files Folder", WIDGET_BUTTON)
         .RaceDisable(false)
         .Callback([](WidgetInfo& info) {
+#ifndef __WIIU__
+            // The Wii U SDL2 port has no SDL_OpenURL, and there is no file browser to open anyway.
             std::string filesPath = Ship::Context::GetRawInstance()->GetAppDirectoryPath();
             SDL_OpenURL(std::string("file:///" + std::filesystem::absolute(filesPath).string()).c_str());
+#endif
         })
         .Options(ButtonOptions().Tooltip("Opens the folder that contains the save and mods folders, etc."));
 

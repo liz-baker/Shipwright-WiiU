@@ -107,6 +107,21 @@ void aLoadBufferImpl(const void* source_addr, uint16_t dest_addr, uint16_t nbyte
 #endif
 }
 
+#ifdef __WIIU__
+// opusfile is not part of the Wii U build, so streamed Opus samples (custom audio) decode to silence.
+struct OpusDecState {
+    int unused;
+};
+
+void aOPUSdecImpl(void* source_addr, uint16_t dest_addr, uint16_t nbytes, struct OpusDecState** decState, int32_t pos,
+                  uint32_t size) {
+    memset(BUF_S16(dest_addr), 0, nbytes);
+}
+
+void aOPUSFree(struct OpusDecState* dec) {
+    free(dec);
+}
+#else
 #include <opusfile.h>
 
 // The decoder is cached on the note, so remember which buffer it was opened for.
@@ -156,6 +171,7 @@ void aOPUSFree(struct OpusDecState* dec) {
     op_free(dec->file);
     free(dec);
 }
+#endif
 
 void aSaveBufferImpl(uint16_t source_addr, int16_t* dest_addr, uint16_t nbytes) {
     memcpy(dest_addr, BUF_S16(source_addr), ROUND_DOWN_16(nbytes));
