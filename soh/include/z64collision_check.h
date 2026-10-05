@@ -202,6 +202,14 @@ typedef struct {
     /* 0x0C */ ColliderTrisElementInit* elements;
 } ColliderTrisInitType1; // size = 0x10
 
+// <sys/types.h> on BSD-derived libcs (devkitPro newlib: Wii U, Switch) defines `quad` as a macro,
+// which would turn the member names below into `quad_t` if it was included before this header.
+// global.h also undefines it, but only after its own includes, which is too late for C++ files that
+// pull in <sys/types.h> (e.g. through spdlog) before z64.h.
+#ifdef quad
+#undef quad
+#endif
+
 typedef struct {
     /* 0x00 */ Vec3f quad[4];
     /* 0x30 */ Vec3s dcMid; // midpoint of vectors d, c
