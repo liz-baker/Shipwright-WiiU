@@ -676,12 +676,14 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
     )
 elseif(CMAKE_SYSTEM_NAME STREQUAL "CafeOS")
     find_package(SDL2 REQUIRED)
-    find_package(SDL2_net REQUIRED)
+    # SDL2_net's imported target depends on the shared SDL2::SDL2, which conflicts with the static-only
+    # SDL2::SDL2-static used here, so link the library file directly.
+    find_library(SDL2_NET_LIBRARY SDL2_net REQUIRED)
     find_package(Ogg REQUIRED)
     find_package(Vorbis REQUIRED)
     set(ADDITIONAL_LIBRARY_DEPENDENCIES
         "libultraship;"
-        "SDL2_net::SDL2_net"
+        ${SDL2_NET_LIBRARY}
         SDL2::SDL2-static
         "Vorbis::vorbisfile"
         "Vorbis::vorbis"
